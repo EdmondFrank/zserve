@@ -32,7 +32,7 @@ pub fn handleUpload(
     };
 
     // Parse multipart body
-    const file_data = parseMultipartBody(allocator, request_body, boundary) catch |err| {
+    const form_data = parseMultipartBody(allocator, request_body, boundary) catch |err| {
         switch (err) {
             error.NoFileField => try http.sendBadRequest(stream, io, "No file field found in request"),
             error.FileTooLarge => try http.sendBadRequest(stream, io, "File too large"),
@@ -40,20 +40,39 @@ pub fn handleUpload(
         }
         return;
     };
-    defer allocator.free(file_data.filename);
-    defer allocator.free(file_data.content);
+    defer allocator.free(form_data.filename);
+    defer allocator.free(form_data.content);
+    if (form_data.path) |path| {
+        defer allocator.free(path);
+    }
+
+    // Validate path (no directory traversal)
+    if (form_data.path) |path| {
+        if (containsTraversal(path)) {
+            try http.sendBadRequest(stream, io, "Invalid path: directory traversal not allowed");
+            return;
+        }
+    }
 
     // Validate filename (no directory traversal)
-    if (std.mem.indexOf(u8, file_data.filename, "..") != null or
-        std.mem.indexOf(u8, file_data.filename, "/") != null or
-        std.mem.indexOf(u8, file_data.filename, "\\") != null)
-    {
-        try http.sendBadRequest(stream, io, "Invalid filename");
+    if (containsTraversal(form_data.filename)) {
+        try http.sendBadRequest(stream, io, "Invalid filename: directory traversal not allowed");
         return;
     }
 
+    // Construct full path (path + filename)
+    const full_path = if (form_data.path) |path| blk: {
+        if (path.len == 0) {
+            break :blk form_data.filename;
+        }
+        // Join path and filename
+        const joined = try std.fs.path.join(allocator, &[_][]const u8{ path, form_data.filename });
+        break :blk joined;
+    } else form_data.filename;
+    defer if (form_data.path != null and full_path.ptr != form_data.filename.ptr) allocator.free(full_path);
+
     // Write file to disk
-    writeUploadedFile(io, allocator, stream, root_dir, file_data.filename, file_data.content) catch |err| {
+    writeUploadedFile(io, allocator, stream, root_dir, full_path, form_data.content) catch |err| {
         std.debug.print("Error writing file: {s}\n", .{@errorName(err)});
         try http.sendInternalServerError(stream, io);
         return;
@@ -63,6 +82,7 @@ pub fn handleUpload(
 const FileData = struct {
     filename: []const u8,
     content: []const u8,
+    path: ?[]const u8 = null,
 };
 
 /// Extract boundary from Content-Type header
@@ -82,9 +102,10 @@ fn extractBoundary(content_type: []const u8) ?[]const u8 {
     return std.mem.trim(u8, content_type[start..end], " \t");
 }
 
-/// Parse multipart/form-data body to extract file
+/// Parse multipart/form-data body to extract file and path
 fn parseMultipartBody(allocator: std.mem.Allocator, body: []const u8, boundary: []const u8) !FileData {
-    var result: FileData = undefined;
+    var file_result: ?FileData = null;
+    var path_result: ?[]const u8 = null;
 
     // Build boundary markers - RFC 2046 says boundary can have optional -- prefix in body
     const delimiter = try std.fmt.allocPrint(allocator, "--{s}", .{boundary});
@@ -116,11 +137,45 @@ fn parseMultipartBody(allocator: std.mem.Allocator, body: []const u8, boundary: 
 
         // Parse part headers and content
         if (try parsePart(allocator, part)) |file_data| {
-            result = file_data;
-            return result;
+            if (file_data.path != null) {
+                // This is the path field
+                if (path_result) |old_path| {
+                    allocator.free(old_path);
+                }
+                path_result = file_data.path;
+                // Don't free path when freeing file_data since we moved it
+                const moved_file_data = FileData{
+                    .filename = file_data.filename,
+                    .content = file_data.content,
+                    .path = null,
+                };
+                // Free the filename and content if they exist (path field doesn't have them)
+                allocator.free(moved_file_data.filename);
+                allocator.free(moved_file_data.content);
+            } else {
+                // This is the file field
+                if (file_result) |old| {
+                    allocator.free(old.filename);
+                    allocator.free(old.content);
+                }
+                file_result = file_data;
+            }
+        } else if (try parsePathField(allocator, part)) |path| {
+            if (path_result) |old_path| {
+                allocator.free(old_path);
+            }
+            path_result = path;
         }
 
         pos = part_start;
+    }
+
+    if (file_result) |result| {
+        return FileData{
+            .filename = result.filename,
+            .content = result.content,
+            .path = path_result,
+        };
     }
 
     return error.NoFileField;
@@ -182,6 +237,75 @@ fn parsePart(allocator: std.mem.Allocator, part: []const u8) !?FileData {
     };
 }
 
+/// Parse a path field from multipart form (name="path")
+fn parsePathField(allocator: std.mem.Allocator, part: []const u8) !?[]const u8 {
+    // Find end of headers (double CRLF or double LF)
+    var header_end: ?usize = std.mem.indexOf(u8, part, "\r\n\r\n");
+    var header_end_offset: usize = 4;
+
+    if (header_end == null) {
+        header_end = std.mem.indexOf(u8, part, "\n\n");
+        header_end_offset = 2;
+    }
+
+    const header_end_pos = header_end orelse return null;
+
+    const headers = part[0..header_end_pos];
+    var content = part[header_end_pos + header_end_offset ..];
+
+    // Remove trailing line ending before boundary
+    if (content.len > 0) {
+        if (std.mem.endsWith(u8, content, "\r\n")) {
+            content = content[0 .. content.len - 2];
+        } else if (std.mem.endsWith(u8, content, "\n")) {
+            content = content[0 .. content.len - 1];
+        }
+    }
+
+    // Check for Content-Disposition with name="path"
+    const disposition = findCaseInsensitive(headers, "Content-Disposition:") orelse return null;
+
+    // Find end of disposition line
+    var disp_end = std.mem.indexOfPos(u8, headers, disposition, "\r\n");
+    if (disp_end == null) {
+        disp_end = std.mem.indexOfPos(u8, headers, disposition, "\n");
+    }
+    const disp_end_pos = disp_end orelse headers.len;
+    const disp_line = headers[disposition..disp_end_pos];
+
+    // Check if this is the path field (name="path")
+    const name_prefix = "name=";
+    const name_idx = findCaseInsensitive(disp_line, name_prefix) orelse return null;
+    var name_start = name_idx + name_prefix.len;
+
+    // Skip whitespace and quotes
+    while (name_start < disp_line.len and (disp_line[name_start] == ' ' or disp_line[name_start] == '\t')) {
+        name_start += 1;
+    }
+    if (name_start >= disp_line.len) return null;
+
+    const is_quoted = disp_line[name_start] == '"';
+    if (is_quoted) name_start += 1;
+
+    var name_end = name_start;
+    while (name_end < disp_line.len) {
+        const c = disp_line[name_end];
+        if (is_quoted) {
+            if (c == '"') break;
+        } else {
+            if (c == ';' or c == ' ' or c == '\r' or c == '\n') break;
+        }
+        name_end += 1;
+    }
+
+    const field_name = disp_line[name_start..name_end];
+    if (!std.mem.eql(u8, field_name, "path")) return null;
+
+    // This is the path field, return the content
+    if (content.len == 0) return null;
+    return allocator.dupe(u8, content) catch return null;
+}
+
 /// Case-insensitive search for a substring
 fn findCaseInsensitive(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len > haystack.len) return null;
@@ -229,6 +353,47 @@ fn extractFilename(allocator: std.mem.Allocator, disp_line: []const u8) ?[]const
     }
 }
 
+/// Check if a path contains directory traversal attempts
+fn containsTraversal(path: []const u8) bool {
+    // Normalize backslashes to forward slashes for checking
+    var i: usize = 0;
+    while (i < path.len) : (i += 1) {
+        const c = path[i];
+        // Check for ".." as a path component (prevents /../, ../, etc.)
+        if (c == '.' and i + 1 < path.len and path[i + 1] == '.') {
+            // Check if it's at start or preceded by /
+            const at_start = i == 0;
+            const preceded_by_sep = i > 0 and (path[i - 1] == '/' or path[i - 1] == '\\');
+            // Check if it's at end or followed by / or \
+            const at_end = i + 2 == path.len;
+            const followed_by_sep = i + 2 < path.len and (path[i + 2] == '/' or path[i + 2] == '\\');
+
+            if ((at_start or preceded_by_sep) and (at_end or followed_by_sep)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// Ensure parent directories exist for the given path
+fn ensureParentDirs(io: Io, root_dir: Io.Dir, path: []const u8) !void {
+    // Find the last separator to get the directory portion
+    const last_sep = std.mem.lastIndexOfAny(u8, path, "/\\");
+    if (last_sep == null) return; // No directory component
+
+    const dir_path = path[0..last_sep.?];
+    if (dir_path.len == 0) return; // Root directory
+
+    // Use createDirPath to create all parent directories at once
+    root_dir.createDirPath(io, dir_path) catch |err| {
+        if (err != error.PathAlreadyExists) {
+            std.debug.print("Failed to create directories '{s}': {s}\n", .{ dir_path, @errorName(err) });
+            return err;
+        }
+    };
+}
+
 /// Write the uploaded file to disk
 fn writeUploadedFile(
     io: Io,
@@ -238,6 +403,12 @@ fn writeUploadedFile(
     filename: []const u8,
     content: []const u8,
 ) !void {
+    // Ensure parent directories exist
+    ensureParentDirs(io, root_dir, filename) catch |err| {
+        std.debug.print("Failed to create directories for {s}: {s}\n", .{ filename, @errorName(err) });
+        return err;
+    };
+
     // Open/create file for writing
     const file = root_dir.createFile(io, filename, .{ .truncate = true }) catch |err| {
         std.debug.print("Failed to create file {s}: {s}\n", .{ filename, @errorName(err) });
@@ -251,15 +422,18 @@ fn writeUploadedFile(
     try file_writer.interface.writeAll(content);
     try file_writer.interface.flush();
 
+    // Extract directory path from filename for the back link
+    const dir_path = std.fs.path.dirname(filename);
+
     // Send success response
     const message = try std.fmt.allocPrint(allocator, "File '{s}' uploaded successfully ({d} bytes)", .{ filename, content.len });
     defer allocator.free(message);
 
-    try sendUploadSuccess(stream, io, message);
+    try sendUploadSuccess(stream, io, message, dir_path);
 }
 
 /// Send a successful upload response
-fn sendUploadSuccess(stream: Io.net.Stream, io: Io, message: []const u8) !void {
+fn sendUploadSuccess(stream: Io.net.Stream, io: Io, message: []const u8, dir_path: ?[]const u8) !void {
     try http.sendResponseHeaders(stream, io, .ok, &[_]struct { []const u8, []const u8 }{
         .{ "Content-Type", "text/html; charset=utf-8" },
     });
@@ -268,7 +442,7 @@ fn sendUploadSuccess(stream: Io.net.Stream, io: Io, message: []const u8) !void {
     var fba = std.heap.FixedBufferAllocator.init(&buf);
     const allocator = fba.allocator();
 
-    var html = std.ArrayList(u8).initCapacity(allocator, 1024) catch return;
+    var html = std.ArrayList(u8).initCapacity(allocator, 2048) catch return;
 
     try html.appendSlice(allocator,
         \\<!DOCTYPE html>
@@ -286,9 +460,20 @@ fn sendUploadSuccess(stream: Io.net.Stream, io: Io, message: []const u8) !void {
         \\  <p>
     );
     try html.appendSlice(allocator, message);
+
+    // Add back link - go to the directory where the file was uploaded
+    if (dir_path) |path| {
+        try html.appendSlice(allocator, "</p>\n  <p><a href=\"/");
+        try html.appendSlice(allocator, path);
+        try html.appendSlice(allocator, "\">← Back to directory listing</a></p>\n");
+    } else {
+        try html.appendSlice(allocator,
+            \\</p>
+            \\  <p><a href="/">← Back to directory listing</a></p>
+        );
+    }
+
     try html.appendSlice(allocator,
-        \\</p>
-        \\  <p><a href="/">← Back to directory listing</a></p>
         \\</body></html>
     );
 

@@ -107,6 +107,22 @@ pub fn listDirectory(
     try stream_writer.interface.writeAll(
         \\  <div class="upload-form">
         \\    <form action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
+    );
+    // Add hidden field with current directory path
+    if (!std.mem.eql(u8, dir_path, ".")) {
+        try stream_writer.interface.writeAll("      <input type=\"hidden\" name=\"path\" value=\"");
+        // Escape HTML special chars in the path
+        for (dir_path) |c| {
+            switch (c) {
+                '&' => try stream_writer.interface.writeAll("&amp;"),
+                '<' => try stream_writer.interface.writeAll("&lt;"),
+                '"' => try stream_writer.interface.writeAll("&quot;"),
+                else => try stream_writer.interface.writeByte(c),
+            }
+        }
+        try stream_writer.interface.writeAll("\" />\n");
+    }
+    try stream_writer.interface.writeAll(
         \\      <div class="file-input-wrapper">
         \\        <input type="file" name="file" id="fileInput" required onchange="document.getElementById('fileName').textContent=this.files[0]?this.files[0].name:''" />
         \\        <label for="fileInput" class="file-input-label">Choose file</label>
