@@ -48,6 +48,11 @@ pub fn getMimeType(path: []const u8) []const u8 {
     if (std.mem.eql(u8, ext, ".md")) return "text/markdown; charset=utf-8";
     if (std.mem.eql(u8, ext, ".org")) return "text/org; charset=utf-8";
 
+    // Data types
+    if (std.mem.eql(u8, ext, ".json")) return "application/json";
+    if (std.mem.eql(u8, ext, ".yaml") or std.mem.eql(u8, ext, ".yml")) return "application/yaml";
+    if (std.mem.eql(u8, ext, ".toml")) return "application/toml";
+
     return "application/octet-stream";
 }
 
