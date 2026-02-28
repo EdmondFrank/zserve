@@ -40,6 +40,14 @@ pub fn getMimeType(path: []const u8) []const u8 {
     if (std.mem.eql(u8, ext, ".pdf")) return "application/pdf";
     if (std.mem.eql(u8, ext, ".zip")) return "application/zip";
 
+    // Code types
+    if (std.mem.eql(u8, ext, ".py")) return "text/x-python; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".rb")) return "text/x-ruby; charset=utf-8";
+
+    // Markup types
+    if (std.mem.eql(u8, ext, ".md")) return "text/markdown; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".org")) return "text/org; charset=utf-8";
+
     return "application/octet-stream";
 }
 

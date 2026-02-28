@@ -83,13 +83,40 @@ pub fn listDirectory(
         \\    li a { flex: 1; text-decoration: none; }
         \\    .size { color: #666; margin-left: 1em; min-width: 6em; text-align: right; }
         \\    a:hover { text-decoration: underline; }
+        \\    .upload-form { margin: 1.5em 0; padding: 1.5em; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        \\    .upload-form form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        \\    .file-input-wrapper { position: relative; display: inline-block; }
+        \\    .file-input-wrapper input[type="file"] { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+        \\    .file-input-label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fff; border: 2px dashed #cbd5e1; border-radius: 8px; color: #64748b; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        \\    .file-input-wrapper:hover .file-input-label { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+        \\    .file-input-label::before { content: "📎"; font-size: 16px; }
+        \\    .upload-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3); }
+        \\    .upload-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(37, 99, 235, 0.4); }
+        \\    .upload-btn:active { transform: translateY(0); }
+        \\    .upload-btn::before { content: "⬆️"; font-size: 14px; }
+        \\    .file-name { color: #334155; font-size: 14px; margin-left: 8px; }
         \\  </style></head><body>
-        \\<h1>Directory listing: 
+        \\<h1>Directory listing:
     );
 
     const title = if (dir_path.len == 0) "/" else dir_path;
     try stream_writer.interface.writeAll(title);
-    try stream_writer.interface.writeAll("</h1><ul>\n");
+    try stream_writer.interface.writeAll("</h1>\n");
+
+    // Add upload form with pretty button
+    try stream_writer.interface.writeAll(
+        \\  <div class="upload-form">
+        \\    <form action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
+        \\      <div class="file-input-wrapper">
+        \\        <input type="file" name="file" id="fileInput" required onchange="document.getElementById('fileName').textContent=this.files[0]?this.files[0].name:''" />
+        \\        <label for="fileInput" class="file-input-label">Choose file</label>
+        \\      </div>
+        \\      <span id="fileName" class="file-name"></span>
+        \\      <button type="submit" class="upload-btn">Upload</button>
+        \\    </form>
+        \\  </div>
+        \\<ul>
+    );
 
     // Add parent directory link if not at root
     if (!std.mem.eql(u8, dir_path, ".")) {
@@ -117,17 +144,17 @@ fn sendDirEntry(
     defer allocator.free(encoded_name);
 
     try writer.writeAll("<li><a href=\"/");
-    
+
     if (!std.mem.eql(u8, dir_path, ".")) {
         try writer.writeAll(dir_path);
         try writer.writeAll("/");
     }
     try writer.writeAll(encoded_name);
-    
+
     try writer.writeAll("\" class=\"");
     try writer.writeAll(class);
     try writer.writeAll("\">");
-    
+
     // Write display name (escape HTML special chars)
     for (entry.name) |c| {
         switch (c) {
@@ -138,20 +165,20 @@ fn sendDirEntry(
             else => try writer.writeByte(c),
         }
     }
-    
+
     if (entry.kind == .directory) {
         try writer.writeAll("/");
     }
-    
+
     try writer.writeAll("</a><span class=\"size\">");
-    
+
     // Format size
     if (entry.kind == .directory) {
         try writer.writeAll("-");
     } else {
         try formatSize(writer, entry.size);
     }
-    
+
     try writer.writeAll("</span></li>\n");
 }
 

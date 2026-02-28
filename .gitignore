@@ -9,3 +9,4 @@
 
 .zig-cache/**/*
 zig-out/*
+.cecli*
