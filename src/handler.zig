@@ -6,6 +6,7 @@ const http = @import("http.zig");
 const directory = @import("directory.zig");
 const file_server = @import("file_server.zig");
 const upload = @import("upload.zig");
+const delete_file = @import("delete.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
@@ -51,6 +52,33 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         const body = try readRequestBody(ctx, &stream_reader, &request, request_raw);
         upload.handleUpload(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, request, body) catch |err| {
             std.debug.print("Error handling upload: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
+    // Handle file delete endpoint
+    if (request.method == .DELETE) {
+        // URL decode the path
+        const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
+            std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+
+        // Check for directory traversal attacks
+        if (url.hasTraversal(decoded_path)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        // Normalize path (remove leading /)
+        const path = if (std.mem.startsWith(u8, decoded_path, "/"))
+            decoded_path[1..]
+        else
+            decoded_path;
+
+        delete_file.handleDelete(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, path) catch |err| {
+            std.debug.print("Error handling delete: {s}\n", .{@errorName(err)});
         };
         return;
     }

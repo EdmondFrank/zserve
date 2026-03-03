@@ -95,7 +95,40 @@ pub fn listDirectory(
         \\    .upload-btn:active { transform: translateY(0); }
         \\    .upload-btn::before { content: "⬆️"; font-size: 14px; }
         \\    .file-name { color: #334155; font-size: 14px; margin-left: 8px; }
-        \\  </style></head><body>
+        \\    .delete-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fee2e2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .delete-btn:hover { background: #fecaca; transform: scale(1.05); }
+        \\    .delete-btn:active { transform: scale(0.95); }
+        \\  </style>
+        \\  <script>
+        \\    function confirmDelete(filename, path, isDirectory) {
+        \\      const itemType = isDirectory ? 'directory' : 'file';
+        \\      const warningMsg = isDirectory 
+        \\        ? 'WARNING: This will delete the entire directory and ALL its contents!' 
+        \\        : '';
+        \\      if (!confirm('Are you sure you want to delete ' + itemType + ' "' + filename + '"?\n\n' + warningMsg)) {
+        \\        return;
+        \\      }
+        \\      const confirmation = prompt('This action cannot be undone. Type \"DELETE\" to confirm:');
+        \\      if (confirmation !== 'DELETE') {
+        \\        if (confirmation !== null) {
+        \\          alert('Delete cancelled. You did not type DELETE correctly.');
+        \\        }
+        \\        return;
+        \\      }
+        \\      fetch('/' + path, { method: 'DELETE' })
+        \\        .then(response => {
+        \\          if (response.ok) {
+        \\            window.location.reload();
+        \\          } else {
+        \\            alert('Failed to delete ' + itemType);
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error: ' + err.message);
+        \\        });
+        \\    }
+        \\  </script>
+        \\</head><body>
         \\<h1>Directory listing:
     );
 
@@ -195,7 +228,47 @@ fn sendDirEntry(
         try formatSize(writer, entry.size);
     }
 
-    try writer.writeAll("</span></li>\n");
+    try writer.writeAll("</span>");
+
+    // Add delete button for all entries (files and directories)
+    // Build full path for delete
+    const full_path = if (std.mem.eql(u8, dir_path, "."))
+        entry.name
+    else
+        try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
+    defer if (!std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
+
+    // Escape the filename for JavaScript
+    try writer.writeAll("<button class=\"delete-btn\" onclick=\"confirmDelete('");
+    // Escape single quotes in filename for JS
+    for (entry.name) |c| {
+        switch (c) {
+            '\\', '\'' => {
+                try writer.writeByte('\\');
+                try writer.writeByte(c);
+            },
+            else => try writer.writeByte(c),
+        }
+    }
+    try writer.writeAll("', '");
+    // Escape single quotes in path for JS
+    for (full_path) |c| {
+        switch (c) {
+            '\\', '\'' => {
+                try writer.writeByte('\\');
+                try writer.writeByte(c);
+            },
+            else => try writer.writeByte(c),
+        }
+    }
+    const is_dir = entry.kind == .directory;
+    if (is_dir) {
+        try writer.writeAll("', true)\" title=\"Delete directory\">🗑️</button>");
+    } else {
+        try writer.writeAll("', false)\" title=\"Delete file\">🗑️</button>");
+    }
+
+    try writer.writeAll("</li>\n");
 }
 
 fn formatSize(writer: *Io.Writer, size: u64) !void {

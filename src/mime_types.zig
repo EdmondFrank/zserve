@@ -43,6 +43,7 @@ pub fn getMimeType(path: []const u8) []const u8 {
     // Code types
     if (std.mem.eql(u8, ext, ".py")) return "text/x-python; charset=utf-8";
     if (std.mem.eql(u8, ext, ".rb")) return "text/x-ruby; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".sh")) return "application/x-sh; charset=utf-8";
 
     // Markup types
     if (std.mem.eql(u8, ext, ".md")) return "text/markdown; charset=utf-8";
