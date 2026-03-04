@@ -79,7 +79,8 @@ pub fn listDirectory(
         \\    .directory { font-weight: bold; color: #0366d6; }
         \\    .file { color: #24292e; }
         \\    ul { list-style-type: none; padding: 0; }
-        \\    li { margin: 0.5em 0; display: flex; align-items: center; }
+        \\    li { margin: 0.5em 0; display: flex; align-items: center; padding: 0.4em 0.8em; border-radius: 8px; transition: background-color 0.2s; }
+        \\    li:hover { background-color: #e5e7eb; }
         \\    li a { flex: 1; text-decoration: none; }
         \\    .size { color: #666; margin-left: 1em; min-width: 6em; text-align: right; }
         \\    a:hover { text-decoration: underline; }
