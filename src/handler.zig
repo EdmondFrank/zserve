@@ -49,7 +49,8 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Handle file upload endpoint
     if (request.method == .POST and std.mem.eql(u8, request.path, "/upload")) {
         // Read the full request body for upload
-        const body = try readRequestBody(ctx, &stream_reader, &request, request_raw);
+        // Use arena allocator so the body is freed automatically when the arena is deinitialized
+        const body = try readRequestBody(arena.allocator(), &stream_reader, &request, request_raw);
         upload.handleUpload(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, request, body) catch |err| {
             std.debug.print("Error handling upload: {s}\n", .{@errorName(err)});
         };
@@ -116,9 +117,11 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     }
 }
 
-/// Read the full request body based on Content-Length
+/// Read the full request body based on Content-Length.
+/// Caller must pass an allocator whose lifetime covers the returned slice;
+/// using an arena allocator ensures the body is freed automatically.
 fn readRequestBody(
-    ctx: ConnectionContext,
+    allocator: std.mem.Allocator,
     stream_reader: anytype,
     request: *const http.Request,
     request_raw: []const u8,
@@ -140,9 +143,9 @@ fn readRequestBody(
         return request_raw[header_end..][0..content_length];
     }
 
-    // Allocate buffer for full body
-    const body = try ctx.allocator.alloc(u8, content_length);
-    errdefer ctx.allocator.free(body);
+    // Allocate buffer for full body using the provided allocator
+    const body = try allocator.alloc(u8, content_length);
+    errdefer allocator.free(body);
 
     // Copy what we already have
     if (already_read > 0) {
@@ -172,9 +175,10 @@ fn readRequestBody(
         pos += n;
     }
 
-    // If we didn't read everything, resize the buffer
+    // If we didn't read everything the stream closed early — treat as an error
+    // rather than silently returning a truncated body to the upload handler.
     if (pos < content_length) {
-        return ctx.allocator.realloc(body, pos);
+        return error.UnexpectedEof;
     }
 
     return body;
@@ -182,8 +186,13 @@ fn readRequestBody(
 
 /// Find the start of the request body (after \r\n\r\n)
 fn findBodyStart(data: []const u8) ?usize {
-    const idx = std.mem.indexOf(u8, data, "\r\n\r\n") orelse
-        std.mem.indexOf(u8, data, "\n\n") orelse
-        return null;
-    return idx + 4; // Skip past \r\n\r\n
+    // Try the standard CRLF header terminator first.
+    if (std.mem.indexOf(u8, data, "\r\n\r\n")) |idx| {
+        return idx + 4;
+    }
+    // Fall back to bare LF terminator — only 2 bytes to skip, not 4.
+    if (std.mem.indexOf(u8, data, "\n\n")) |idx| {
+        return idx + 2;
+    }
+    return null;
 }

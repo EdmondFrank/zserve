@@ -88,22 +88,24 @@ pub const ThreadPool = struct {
 
     fn workerLoop(pool: *Self) void {
         while (true) {
-            pool.queue_mutex.lock();
-            defer pool.queue_mutex.unlock();
+            // Dequeue a task inside a scoped block so the mutex is released
+            // before executing the task. This avoids the previous double-unlock
+            // bug where a `defer unlock` and an explicit `unlock` both fired.
+            const task = blk: {
+                pool.queue_mutex.lock();
+                defer pool.queue_mutex.unlock();
 
-            // Wait for a task or shutdown
-            while (pool.task_queue.items.len == 0 and !pool.shutdown) {
-                pool.queue_cond.wait(&pool.queue_mutex);
-            }
+                // Wait for a task or shutdown signal
+                while (pool.task_queue.items.len == 0 and !pool.shutdown) {
+                    pool.queue_cond.wait(&pool.queue_mutex);
+                }
 
-            if (pool.shutdown) {
-                return;
-            }
+                if (pool.shutdown) return;
 
-            const task = pool.task_queue.orderedRemove(0);
-            pool.queue_mutex.unlock();
+                break :blk pool.task_queue.orderedRemove(0);
+            }; // mutex is unlocked here by the deferred unlock above
 
-            // Execute task
+            // Execute task outside the lock so other workers can dequeue concurrently
             task.fn_ptr(task.arg) catch |err| {
                 std.debug.print("Task error: {s}\n", .{@errorName(err)});
             };

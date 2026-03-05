@@ -21,7 +21,8 @@ pub const Logger = struct {
     ) void {
         _ = self;
         const stdout = std.io.getStdOut();
-        const timestamp = getTimestamp();
+        var ts_buf: [30]u8 = undefined;
+        const timestamp = getTimestamp(&ts_buf);
 
         var buf: [256]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, "[{s}] {s} {s} {d}\n", .{
@@ -38,8 +39,9 @@ pub const Logger = struct {
     pub fn logError(self: *Self, comptime fmt: []const u8, args: anytype) void {
         _ = self;
         const stdout = std.io.getStdOut();
-        const timestamp = getTimestamp();
-        
+        var ts_buf: [30]u8 = undefined;
+        const timestamp = getTimestamp(&ts_buf);
+
         var buf: [512]u8 = undefined;
         const prefix = std.fmt.bufPrint(&buf, "[{s}] ERROR: ", .{timestamp}) catch return;
         _ = stdout.write(prefix) catch {};
@@ -53,8 +55,9 @@ pub const Logger = struct {
     pub fn logInfo(self: *Self, comptime fmt: []const u8, args: anytype) void {
         _ = self;
         const stdout = std.io.getStdOut();
-        const timestamp = getTimestamp();
-        
+        var ts_buf: [30]u8 = undefined;
+        const timestamp = getTimestamp(&ts_buf);
+
         var buf: [512]u8 = undefined;
         const prefix = std.fmt.bufPrint(&buf, "[{s}] INFO: ", .{timestamp}) catch return;
         _ = stdout.write(prefix) catch {};
@@ -65,7 +68,11 @@ pub const Logger = struct {
     }
 };
 
-fn getTimestamp() []const u8 {
+/// Format the current wall-clock time into `buf` and return the written slice.
+/// The caller must supply a buffer of at least 30 bytes and must keep it live
+/// for as long as the returned slice is used. This avoids the previous bug
+/// where a local stack buffer was returned as a slice (use-after-free).
+fn getTimestamp(buf: *[30]u8) []const u8 {
     const now = std.time.timestamp();
     const tm = std.time.epoch.EpochSeconds{ .secs = @intCast(now) };
 
@@ -76,8 +83,7 @@ fn getTimestamp() []const u8 {
     const minutes = tm.getMinutesIntoHour();
     const seconds = tm.getSecondsIntoMinute();
 
-    var buf: [30]u8 = undefined;
-    return std.fmt.bufPrint(&buf, "{d}-{s:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{
+    return std.fmt.bufPrint(buf, "{d}-{s:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{
         year,
         @tagName(month),
         day,

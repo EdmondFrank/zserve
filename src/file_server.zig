@@ -76,11 +76,15 @@ fn serveFullFile(
     filename: []const u8,
     file_size: u64,
 ) !void {
+    var len_buf: [32]u8 = undefined;
+    const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{file_size}) catch unreachable;
+    var disp_buf: [1024]u8 = undefined;
+    const disp_str = try std.fmt.bufPrint(&disp_buf, "inline; filename=\"{s}\"", .{filename});
     try http.sendResponseHeaders(stream, io, .ok, &[_]struct { []const u8, []const u8 }{
         .{ "Content-Type", mime_type },
-        .{ "Content-Length", try std.fmt.allocPrint(std.heap.page_allocator, "{d}", .{file_size}) },
+        .{ "Content-Length", len_str },
         .{ "Accept-Ranges", "bytes" },
-        .{ "Content-Disposition", try std.fmt.allocPrint(std.heap.page_allocator, "inline; filename=\"{s}\"", .{filename}) },
+        .{ "Content-Disposition", disp_str },
     });
 
     var write_buf: [BUFFER_SIZE]u8 = undefined;
@@ -92,7 +96,7 @@ fn serveFullFile(
         const to_read = @min(BUFFER_SIZE, file_size - offset);
         const n = file.readPositionalAll(io, read_buf[0..to_read], offset) catch |err| {
             std.debug.print("Error reading file: {s}\n", .{@errorName(err)});
-            return;
+            return err;
         };
         if (n == 0) break;
 
@@ -201,9 +205,11 @@ fn servePreview(
     });
     defer allocator.free(html);
 
+    var len_buf: [32]u8 = undefined;
+    const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{html.len}) catch unreachable;
     try http.sendResponseHeaders(stream, io, .ok, &[_]struct { []const u8, []const u8 }{
         .{ "Content-Type", "text/html; charset=utf-8" },
-        .{ "Content-Length", try std.fmt.allocPrint(std.heap.page_allocator, "{d}", .{html.len}) },
+        .{ "Content-Length", len_str },
     });
 
     var write_buf: [BUFFER_SIZE]u8 = undefined;
@@ -225,12 +231,18 @@ fn sendPartialContent(
     const end = range.end orelse (file_size - 1);
     const len = end - range.start + 1;
 
+    var len_buf: [32]u8 = undefined;
+    const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{len}) catch unreachable;
+    var range_buf: [72]u8 = undefined;
+    const range_str = try std.fmt.bufPrint(&range_buf, "bytes {d}-{d}/{d}", .{ range.start, end, file_size });
+    var disp_buf: [1024]u8 = undefined;
+    const disp_str = try std.fmt.bufPrint(&disp_buf, "inline; filename=\"{s}\"", .{filename});
     try http.sendResponseHeaders(stream, io, .partial_content, &[_]struct { []const u8, []const u8 }{
         .{ "Content-Type", mime_type },
-        .{ "Content-Length", try std.fmt.allocPrint(std.heap.page_allocator, "{d}", .{len}) },
-        .{ "Content-Range", try std.fmt.allocPrint(std.heap.page_allocator, "bytes {d}-{d}/{d}", .{ range.start, end, file_size }) },
+        .{ "Content-Length", len_str },
+        .{ "Content-Range", range_str },
         .{ "Accept-Ranges", "bytes" },
-        .{ "Content-Disposition", try std.fmt.allocPrint(std.heap.page_allocator, "inline; filename=\"{s}\"", .{filename}) },
+        .{ "Content-Disposition", disp_str },
     });
 
     var write_buf: [BUFFER_SIZE]u8 = undefined;
@@ -243,7 +255,7 @@ fn sendPartialContent(
         const read_size = @min(remaining, read_buf.len);
         const n = file.readPositionalAll(io, read_buf[0..read_size], offset) catch |err| {
             std.debug.print("Error reading file at offset {d}: {s}\n", .{ offset, @errorName(err) });
-            return;
+            return err;
         };
         if (n == 0) break;
 

@@ -32,6 +32,25 @@ pub fn main(init: std.process.Init) !void {
     var server_ctx = ServerContext.init(allocator, args.root_dir);
     defer server_ctx.deinit();
 
+    // Register SIGINT/SIGTERM handlers so Ctrl+C triggers a graceful shutdown
+    // instead of abruptly killing the process.
+    const SigHandler = struct {
+        var ctx: *ServerContext = undefined;
+        fn handle(_: c_int) callconv(.c) void {
+            ctx.requestShutdown();
+        }
+    };
+    SigHandler.ctx = &server_ctx;
+    const sig_action = std.posix.Sigaction{
+        // @ptrCast bridges the platform-specific signal parameter type
+        // (e.g. c.SIG__enum on macOS vs c_int on Linux) to our handler.
+        .handler = .{ .handler = @ptrCast(&SigHandler.handle) },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(std.posix.SIG.INT, &sig_action, null);
+    std.posix.sigaction(std.posix.SIG.TERM, &sig_action, null);
+
     // Parse address and create listener
     const address = try Io.net.IpAddress.parseIp4(args.host, args.port);
     var server = try address.listen(io, .{ .reuse_address = true });
