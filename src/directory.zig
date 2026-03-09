@@ -99,6 +99,9 @@ pub fn listDirectory(
         \\    .delete-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fee2e2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
         \\    .delete-btn:hover { background: #fecaca; transform: scale(1.05); }
         \\    .delete-btn:active { transform: scale(0.95); }
+        \\    .tail-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 6px; color: #2563eb; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .tail-btn:hover { background: #bfdbfe; transform: scale(1.05); }
+        \\    .tail-btn:active { transform: scale(0.95); }
         \\  </style>
         \\  <script>
         \\    function confirmDelete(filename, path, isDirectory) {
@@ -260,9 +263,65 @@ fn sendDirEntry(
         try writer.writeAll("', true)\" title=\"Delete directory\">🗑️</button>");
     } else {
         try writer.writeAll("', false)\" title=\"Delete file\">🗑️</button>");
+
+        // Add Tail button for text files
+        if (!is_dir and isTextFile(entry.name)) {
+            try writer.writeAll("<button class=\"tail-btn\" onclick=\"window.open('/tail?file=");
+            // Escape the path for URL
+            const url_encoded_path = try url.encode(allocator, full_path);
+            defer allocator.free(url_encoded_path);
+            try writer.writeAll(url_encoded_path);
+            try writer.writeAll("', '_blank')\" title=\"Tail -f\">📜</button>");
+        }
     }
 
     try writer.writeAll("</li>\n");
+}
+
+/// Check if a file is likely a text/log file based on extension
+fn isTextFile(filename: []const u8) bool {
+    const text_extensions = &[_][]const u8{
+        ".txt",        ".log",      ".md",    ".csv",    ".json",       ".yaml",   ".yml",
+        ".toml",       ".ini",      ".conf",  ".config", ".properties", ".sh",     ".bash",
+        ".zsh",        ".fish",     ".ps1",   ".bat",    ".cmd",        ".js",     ".ts",
+        ".jsx",        ".tsx",      ".vue",   ".html",   ".htm",        ".css",    ".scss",
+        ".sass",       ".less",     ".styl",  ".py",     ".rb",         ".pl",     ".php",
+        ".java",       ".kt",       ".scala", ".go",     ".rs",         ".c",      ".cpp",
+        ".cc",         ".cxx",      ".h",     ".hpp",    ".cs",         ".fs",     ".fsx",
+        ".vb",         ".swift",    ".zig",   ".c3",     ".odin",       ".v",      ".nim",
+        ".r",          ".m",        ".mm",    ".groovy", ".clj",        ".cljs",   ".hs",
+        ".lhs",        ".elm",      ".erl",   ".hrl",    ".ex",         ".exs",    ".lua",
+        ".moon",       ".cr",       ".d",     ".dlang",  ".jl",         ".pas",    ".pp",
+        ".inc",        ".ml",       ".mli",   ".sml",    ".sql",        ".sqlite", ".pgsql",
+        ".mysql",      ".xml",      ".svg",   ".xsl",    ".xslt",       ".xsd",    ".dtd",
+        ".dockerfile", ".makefile", ".cmake", ".gradle",
+    };
+
+    // Convert filename to lowercase for case-insensitive comparison
+    var lower_buf: [256]u8 = undefined;
+    const lower = std.ascii.lowerString(&lower_buf, filename);
+
+    for (text_extensions) |ext| {
+        if (std.mem.endsWith(u8, lower, ext)) {
+            return true;
+        }
+    }
+
+    // Special case for files without extension that are commonly text files
+    const special_files = &[_][]const u8{
+        "dockerfile",    "makefile",     "rakefile",      "gemfile",
+        "cargo.toml",    "package.json", "composer.json", "readme",
+        "license",       "changelog",    "authors",       ".gitignore",
+        ".dockerignore", ".env",         ".editorconfig",
+    };
+
+    for (special_files) |name| {
+        if (std.mem.eql(u8, lower, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn formatSize(writer: *Io.Writer, size: u64) !void {

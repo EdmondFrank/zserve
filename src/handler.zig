@@ -7,6 +7,7 @@ const directory = @import("directory.zig");
 const file_server = @import("file_server.zig");
 const upload = @import("upload.zig");
 const delete_file = @import("delete.zig");
+const tail = @import("tail.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
@@ -81,6 +82,30 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         delete_file.handleDelete(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, path) catch |err| {
             std.debug.print("Error handling delete: {s}\n", .{@errorName(err)});
         };
+        return;
+    }
+
+    // Handle tail endpoint (log file streaming)
+    if (std.mem.startsWith(u8, request.path, "/tail")) {
+        if (std.mem.startsWith(u8, request.path, "/tail/stream")) {
+            // Get file path from query strings
+            const query_start = std.mem.indexOf(u8, request.path, "?file=");
+            if (query_start) |idx| {
+                const file_path = request.path[idx + 6 ..]; // Skip "?file="
+                tail.handleTailStream(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, file_path) catch |err| {
+                    std.debug.print("Error handling tail stream: {s}\n", .{@errorName(err)});
+                };
+            } else {
+                http.sendBadRequest(ctx.stream, ctx.io, "Missing file parameter") catch {};
+            }
+        } else if (std.mem.startsWith(u8, request.path, "/tail?file=")) {
+            const file_path = request.path[11..]; // Skip "/tail?file="
+            tail.handleTail(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, file_path) catch |err| {
+                std.debug.print("Error handling tail: {s}\n", .{@errorName(err)});
+            };
+        } else {
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid tail endpoint") catch {};
+        }
         return;
     }
 
