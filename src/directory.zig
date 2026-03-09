@@ -102,6 +102,9 @@ pub fn listDirectory(
         \\    .tail-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 6px; color: #2563eb; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
         \\    .tail-btn:hover { background: #bfdbfe; transform: scale(1.05); }
         \\    .tail-btn:active { transform: scale(0.95); }
+        \\    .exec-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; color: #16a34a; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .exec-btn:hover { background: #bbf7d0; transform: scale(1.05); }
+        \\    .exec-btn:active { transform: scale(0.95); }
         \\  </style>
         \\  <script>
         \\    function confirmDelete(filename, path, isDirectory) {
@@ -119,6 +122,21 @@ pub fn listDirectory(
         \\          } else {
         \\            alert('Failed to delete ' + itemType);
         \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error: ' + err.message);
+        \\        });
+        \\    }
+        \\    function confirmExecute(filename, path) {
+        \\      if (!confirm('Are you sure you want to execute "' + filename + '"?\n\nWARNING: This will run the script on the server!')) {
+        \\        return;
+        \\      }
+        \\      fetch('/execute?file=' + encodeURIComponent(path), { method: 'POST' })
+        \\        .then(response => response.text())
+        \\        .then(html => {
+        \\          document.open();
+        \\          document.write(html);
+        \\          document.close();
         \\        })
         \\        .catch(err => {
         \\          alert('Error: ' + err.message);
@@ -273,6 +291,33 @@ fn sendDirEntry(
             try writer.writeAll(url_encoded_path);
             try writer.writeAll("', '_blank')\" title=\"Tail -f\">📜</button>");
         }
+
+        // Add Execute button for shell scripts
+        if (!is_dir and isShellScript(entry.name)) {
+            try writer.writeAll("<button class=\"exec-btn\" onclick=\"confirmExecute('");
+            // Escape single quotes in filename for JS
+            for (entry.name) |c| {
+                switch (c) {
+                    '\\', '\'' => {
+                        try writer.writeByte('\\');
+                        try writer.writeByte(c);
+                    },
+                    else => try writer.writeByte(c),
+                }
+            }
+            try writer.writeAll("', '");
+            // Escape single quotes in path for JS
+            for (full_path) |c| {
+                switch (c) {
+                    '\\', '\'' => {
+                        try writer.writeByte('\\');
+                        try writer.writeByte(c);
+                    },
+                    else => try writer.writeByte(c),
+                }
+            }
+            try writer.writeAll("')\" title=\"Execute script\">▶️</button>");
+        }
     }
 
     try writer.writeAll("</li>\n");
@@ -321,6 +366,24 @@ fn isTextFile(filename: []const u8) bool {
         }
     }
 
+    return false;
+}
+
+/// Check if a file is a shell script based on extension
+fn isShellScript(filename: []const u8) bool {
+    const shell_extensions = &[_][]const u8{
+        ".sh", ".bash", ".zsh", ".fish", ".ksh",
+    };
+
+    // Convert filename to lowercase for case-insensitive comparison
+    var lower_buf: [256]u8 = undefined;
+    const lower = std.ascii.lowerString(&lower_buf, filename);
+
+    for (shell_extensions) |ext| {
+        if (std.mem.endsWith(u8, lower, ext)) {
+            return true;
+        }
+    }
     return false;
 }
 

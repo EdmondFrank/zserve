@@ -8,6 +8,7 @@ const file_server = @import("file_server.zig");
 const upload = @import("upload.zig");
 const delete_file = @import("delete.zig");
 const tail = @import("tail.zig");
+const execute = @import("execute.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
@@ -106,6 +107,28 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         } else {
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid tail endpoint") catch {};
         }
+        return;
+    }
+
+    // Handle execute endpoint (shell script execution)
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/execute?file=")) {
+        const file_path = request.path[14..]; // Skip "/execute?file="
+        // URL decode the file path
+        const decoded_file_path = url.decode(arena.allocator(), file_path) catch |err| {
+            std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+
+        // Check for directory traversal attacks
+        if (url.hasTraversal(decoded_file_path)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        execute.handleExecute(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, decoded_file_path) catch |err| {
+            std.debug.print("Error handling execute: {s}\n", .{@errorName(err)});
+        };
         return;
     }
 
