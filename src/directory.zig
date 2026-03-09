@@ -109,13 +109,6 @@ pub fn listDirectory(
         \\      if (!confirm('Are you sure you want to delete ' + itemType + ' "' + filename + '"?\n\n' + warningMsg)) {
         \\        return;
         \\      }
-        \\      const confirmation = prompt('This action cannot be undone. Type \"DELETE\" to confirm:');
-        \\      if (confirmation !== 'DELETE') {
-        \\        if (confirmation !== null) {
-        \\          alert('Delete cancelled. You did not type DELETE correctly.');
-        \\        }
-        \\        return;
-        \\      }
         \\      fetch('/' + path, { method: 'DELETE' })
         \\        .then(response => {
         \\          if (response.ok) {
