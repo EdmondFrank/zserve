@@ -57,15 +57,50 @@ pub fn main(init: std.process.Init) !void {
     defer server.deinit(io);
 
     std.debug.print("Server listening on http://{s}:{d}\n", .{ args.host, args.port });
-    std.debug.print("Serving from root directory: {s}\n", .{ args.root_path });
+    std.debug.print("Serving from root directory: {s}\n", .{args.root_path});
     std.debug.print("Press Ctrl+C to shutdown\n", .{});
+
+    // Set a receive timeout on the server socket so accept() returns periodically
+    // and allows checking the shutdown flag. This prevents indefinite blocking.
+    const timeout = std.posix.timeval{ .sec = 1, .usec = 0 };
+    std.posix.setsockopt(
+        server.socket.handle,
+        std.posix.SOL.SOCKET,
+        std.posix.SO.RCVTIMEO,
+        std.mem.asBytes(&timeout),
+    ) catch |err| {
+        std.debug.print("Warning: Failed to set socket timeout: {s}\n", .{@errorName(err)});
+    };
 
     // Accept connections loop
     while (!server_ctx.isShutdownRequested()) {
         const stream = server.accept(io) catch |err| {
             if (server_ctx.isShutdownRequested()) break;
-            std.debug.print("Error accepting connection: {s}\n", .{@errorName(err)});
+            // EAGAIN/ETIMEDOUT are expected when the timeout expires - just continue
+            if (err == error.WouldBlock or err == error.TimedOut) continue;
+            // std.debug.print("Error accepting connection: {s}\n", .{@errorName(err)});
             continue;
+        };
+
+        // Set receive timeout on the connection to prevent indefinite blocking on reads
+        // This prevents a slow/stalled client from hanging the server
+        std.posix.setsockopt(
+            stream.socket.handle,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.RCVTIMEO,
+            std.mem.asBytes(&timeout),
+        ) catch |err| {
+            std.debug.print("Warning: Failed to set connection timeout: {s}\n", .{@errorName(err)});
+        };
+
+        // Also set send timeout to prevent hangs when writing responses to slow clients
+        std.posix.setsockopt(
+            stream.socket.handle,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.SNDTIMEO,
+            std.mem.asBytes(&timeout),
+        ) catch |err| {
+            std.debug.print("Warning: Failed to set send timeout: {s}\n", .{@errorName(err)});
         };
 
         // Handle connection in same thread (simplified for now)

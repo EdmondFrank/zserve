@@ -6,12 +6,13 @@ const mime_types = @import("mime_types.zig");
 const BUFFER_SIZE = 64 * 1024;
 const MAX_PREVIEW_SIZE = 1024 * 1024; // 1MB max for preview files
 
-/// Check if a file should be previewed (JSON, YAML, TOML, Shell)
+/// Check if a file should be previewed (JSON, YAML, TOML, Shell, Markdown)
 fn isPreviewableFile(mime_type: []const u8) bool {
     return std.mem.eql(u8, mime_type, "application/json") or
         std.mem.eql(u8, mime_type, "application/yaml") or
         std.mem.eql(u8, mime_type, "application/toml") or
-        std.mem.eql(u8, mime_type, "application/x-sh");
+        std.mem.startsWith(u8, mime_type, "application/x-sh") or
+        std.mem.startsWith(u8, mime_type, "text/markdown");
 }
 
 /// Serve a file to the client, handling range requests
@@ -138,8 +139,10 @@ fn servePreview(
         "yaml"
     else if (std.mem.eql(u8, mime_type, "application/toml"))
         "toml"
-    else if (std.mem.eql(u8, mime_type, "application/x-sh"))
+    else if (std.mem.startsWith(u8, mime_type, "application/x-sh"))
         "bash"
+    else if (std.mem.startsWith(u8, mime_type, "text/markdown"))
+        "markdown"
     else
         "text";
 
@@ -170,6 +173,7 @@ fn servePreview(
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
         \\  <style>
         \\    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f6f8fa; }}
         \\    .header {{ background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 1em 2em; box-shadow: 0 2px 8px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: space-between; }}
