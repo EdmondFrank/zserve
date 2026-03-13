@@ -131,16 +131,7 @@ pub fn listDirectory(
         \\      if (!confirm('Are you sure you want to execute "' + filename + '"?\n\nWARNING: This will run the script on the server!')) {
         \\        return;
         \\      }
-        \\      fetch('/execute?file=' + encodeURIComponent(path), { method: 'POST' })
-        \\        .then(response => response.text())
-        \\        .then(html => {
-        \\          document.open();
-        \\          document.write(html);
-        \\          document.close();
-        \\        })
-        \\        .catch(err => {
-        \\          alert('Error: ' + err.message);
-        \\        });
+        \\      window.open('/execute?file=' + encodeURIComponent(path), '_blank');
         \\    }
         \\  </script>
         \\</head><body>

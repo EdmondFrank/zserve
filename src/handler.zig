@@ -111,7 +111,7 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     }
 
     // Handle execute endpoint (shell script execution)
-    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/execute?file=")) {
+    if (std.mem.startsWith(u8, request.path, "/execute?file=")) {
         const file_path = request.path[14..]; // Skip "/execute?file="
         // URL decode the file path
         const decoded_file_path = url.decode(arena.allocator(), file_path) catch |err| {
