@@ -1,4 +1,5 @@
 const std = @import("std");
+const Io = std.Io;
 
 pub const Task = struct {
     fn_ptr: *const fn (*anyopaque) anyerror!void,
@@ -7,22 +8,24 @@ pub const Task = struct {
 
 pub const ThreadPool = struct {
     allocator: std.mem.Allocator,
+    io: Io,
     workers: std.ArrayList(std.Thread),
     task_queue: std.ArrayList(Task),
-    queue_mutex: std.Thread.Mutex,
-    queue_cond: std.Thread.Condition,
+    queue_mutex: Io.Mutex,
+    queue_cond: Io.Condition,
     shutdown: bool,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, num_workers: usize) !*Self {
+    pub fn init(allocator: std.mem.Allocator, io: Io, num_workers: usize) !*Self {
         const pool = try allocator.create(Self);
         pool.* = .{
             .allocator = allocator,
-            .workers = std.ArrayList(std.Thread).init(allocator),
-            .task_queue = std.ArrayList(Task).init(allocator),
-            .queue_mutex = .{},
-            .queue_cond = .{},
+            .io = io,
+            .workers = try std.ArrayList(std.Thread).initCapacity(allocator, num_workers),
+            .task_queue = try std.ArrayList(Task).initCapacity(allocator, 64),
+            .queue_mutex = Io.Mutex.init,
+            .queue_cond = Io.Condition.init,
             .shutdown = false,
         };
 
@@ -30,7 +33,7 @@ pub const ThreadPool = struct {
         var i: usize = 0;
         while (i < num_workers) : (i += 1) {
             const thread = try std.Thread.spawn(.{}, workerLoop, .{pool});
-            try pool.workers.append(thread);
+            try pool.workers.append(allocator, thread);
         }
 
         return pool;
@@ -38,10 +41,10 @@ pub const ThreadPool = struct {
 
     pub fn deinit(self: *Self) void {
         // Signal shutdown
-        self.queue_mutex.lock();
+        self.queue_mutex.lock(self.io) catch {};
         self.shutdown = true;
-        self.queue_cond.broadcast();
-        self.queue_mutex.unlock();
+        self.queue_cond.broadcast(self.io);
+        self.queue_mutex.unlock(self.io);
 
         // Wait for all workers to finish
         for (self.workers.items) |worker| {
@@ -49,8 +52,8 @@ pub const ThreadPool = struct {
         }
 
         // Clean up
-        self.workers.deinit();
-        self.task_queue.deinit();
+        self.workers.deinit(self.allocator);
+        self.task_queue.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -80,35 +83,37 @@ pub const ThreadPool = struct {
             .arg = task_arg,
         };
 
-        self.queue_mutex.lock();
-        try self.task_queue.append(task);
-        self.queue_cond.signal();
-        self.queue_mutex.unlock();
+        try self.queue_mutex.lock(self.io);
+        try self.task_queue.append(self.allocator, task);
+        self.queue_cond.signal(self.io);
+        self.queue_mutex.unlock(self.io);
     }
 
     fn workerLoop(pool: *Self) void {
         while (true) {
             // Dequeue a task inside a scoped block so the mutex is released
-            // before executing the task. This avoids the previous double-unlock
-            // bug where a `defer unlock` and an explicit `unlock` both fired.
+            // before executing the task.
             const task = blk: {
-                pool.queue_mutex.lock();
-                defer pool.queue_mutex.unlock();
+                pool.queue_mutex.lock(pool.io) catch break :blk null;
+                defer pool.queue_mutex.unlock(pool.io);
 
                 // Wait for a task or shutdown signal
                 while (pool.task_queue.items.len == 0 and !pool.shutdown) {
-                    pool.queue_cond.wait(&pool.queue_mutex);
+                    pool.queue_cond.wait(pool.io, &pool.queue_mutex) catch {};
                 }
 
                 if (pool.shutdown) return;
+                if (pool.task_queue.items.len == 0) return;
 
-                break :blk pool.task_queue.orderedRemove(0);
-            }; // mutex is unlocked here by the deferred unlock above
-
-            // Execute task outside the lock so other workers can dequeue concurrently
-            task.fn_ptr(task.arg) catch |err| {
-                std.debug.print("Task error: {s}\n", .{@errorName(err)});
+                break :blk pool.task_queue.swapRemove(pool.task_queue.items.len - 1);
             };
+
+            if (task) |t| {
+                // Execute task outside the lock so other workers can dequeue concurrently
+                t.fn_ptr(t.arg) catch |err| {
+                    std.debug.print("Task error: {s}\n", .{@errorName(err)});
+                };
+            }
         }
     }
 };

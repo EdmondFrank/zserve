@@ -1,6 +1,9 @@
 const std = @import("std");
 const Io = std.Io;
 
+/// Maximum request body size (10MB) to prevent DoS attacks
+const MAX_BODY_SIZE = 10 * 1024 * 1024;
+
 const url = @import("url.zig");
 const http = @import("http.zig");
 const directory = @import("directory.zig");
@@ -52,7 +55,14 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     if (request.method == .POST and std.mem.eql(u8, request.path, "/upload")) {
         // Read the full request body for upload
         // Use arena allocator so the body is freed automatically when the arena is deinitialized
-        const body = try readRequestBody(arena.allocator(), &stream_reader, &request, request_raw);
+        const body = readRequestBody(arena.allocator(), &stream_reader, &request, request_raw) catch |err| {
+            if (err == error.RequestTooLarge) {
+                http.sendErrorResponse(ctx.stream, ctx.io, .payload_too_large, "Request body too large (max 10MB)") catch {};
+            } else {
+                std.debug.print("Error reading request body: {s}\n", .{@errorName(err)});
+            }
+            return;
+        };
         upload.handleUpload(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, request, body) catch |err| {
             std.debug.print("Error handling upload: {s}\n", .{@errorName(err)});
         };
@@ -158,7 +168,7 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     } else |_| {
         // Not a directory, try as file
-        file_server.serveFile(ctx.io, arena.allocator(), ctx.stream, path_to_open, ctx.root_dir, request_raw) catch |err| {
+        file_server.serveFile(ctx.io, arena.allocator(), ctx.stream, path_to_open, ctx.root_dir, request.headers) catch |err| {
             std.debug.print("File not found: {s} ({s})\n", .{ path_to_open, @errorName(err) });
             http.sendNotFound(ctx.stream, ctx.io) catch {};
         };
@@ -177,6 +187,11 @@ fn readRequestBody(
     // Get Content-Length header
     const content_length_str = request.headers.get("Content-Length") orelse return "";
     const content_length = std.fmt.parseInt(usize, content_length_str, 10) catch return "";
+
+    // Check body size limit to prevent DoS attacks
+    if (content_length > MAX_BODY_SIZE) {
+        return error.RequestTooLarge;
+    }
 
     if (content_length == 0) return "";
 

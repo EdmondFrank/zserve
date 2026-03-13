@@ -65,6 +65,7 @@ pub const StatusCode = enum(u16) {
     not_found = 404,
     bad_request = 400,
     internal_server_error = 500,
+    payload_too_large = 413,
 
     pub fn toText(self: StatusCode) []const u8 {
         return switch (self) {
@@ -73,6 +74,7 @@ pub const StatusCode = enum(u16) {
             .not_found => "Not Found",
             .bad_request => "Bad Request",
             .internal_server_error => "Internal Server Error",
+            .payload_too_large => "Payload Too Large",
         };
     }
 };
@@ -151,7 +153,7 @@ pub fn sendResponseHeaders(
     const allocator = fba.allocator();
 
     var msg = std.ArrayList(u8).initCapacity(allocator, 1024) catch return error.OutOfMemory;
-    
+
     // Build status line directly
     try msg.appendSlice(allocator, "HTTP/1.1 ");
     const status_code = @intFromEnum(status);

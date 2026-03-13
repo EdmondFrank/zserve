@@ -4,6 +4,14 @@ const Io = std.Io;
 const params = @import("params.zig");
 const ServerContext = @import("server_context.zig").ServerContext;
 const handler = @import("handler.zig");
+const ThreadPool = @import("thread_pool.zig").ThreadPool;
+
+/// Wrapper function for handling connections in the thread pool
+fn handleConnectionWrapper(ctx: handler.ConnectionContext) !void {
+    handler.handleConnection(ctx) catch |err| {
+        std.debug.print("Error handling connection: {s}\n", .{@errorName(err)});
+    };
+}
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -31,6 +39,12 @@ pub fn main(init: std.process.Init) !void {
     // Create server context
     var server_ctx = ServerContext.init(allocator, args.root_dir);
     defer server_ctx.deinit();
+
+    // Initialize thread pool for concurrent connection handling
+    const num_workers = std.Thread.getCpuCount() catch 4;
+    var thread_pool = try ThreadPool.init(allocator, io, num_workers);
+    defer thread_pool.deinit();
+    std.debug.print("Thread pool initialized with {d} workers\n", .{num_workers});
 
     // Register SIGINT/SIGTERM handlers so Ctrl+C triggers a graceful shutdown
     // instead of abruptly killing the process.
@@ -103,14 +117,18 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("Warning: Failed to set send timeout: {s}\n", .{@errorName(err)});
         };
 
-        // Handle connection in same thread (simplified for now)
-        handler.handleConnection(.{
+        // Create connection context for the handler
+        const conn_ctx = handler.ConnectionContext{
             .allocator = allocator,
             .io = io,
             .stream = stream,
             .root_dir = args.root_dir,
-        }) catch |err| {
-            std.debug.print("Error handling connection: {s}\n", .{@errorName(err)});
+        };
+
+        // Submit connection to thread pool for concurrent handling
+        thread_pool.submit(handleConnectionWrapper, conn_ctx) catch |err| {
+            std.debug.print("Error submitting connection to thread pool: {s}\n", .{@errorName(err)});
+            stream.close(io);
         };
     }
 

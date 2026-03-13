@@ -22,7 +22,7 @@ pub fn serveFile(
     stream: Io.net.Stream,
     path: []const u8,
     root_dir: Io.Dir,
-    request: []const u8,
+    headers: std.StringHashMap([]const u8),
 ) !void {
     const file = try root_dir.openFile(io, path, .{});
     defer file.close(io);
@@ -40,22 +40,7 @@ pub fn serveFile(
         return;
     }
 
-    // Parse headers to check for Range request
-    var headers = std.StringHashMap([]const u8).init(allocator);
-    defer headers.deinit();
-
-    var lines = std.mem.splitScalar(u8, request, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \r\n");
-        if (trimmed.len == 0) break;
-
-        if (std.mem.indexOf(u8, trimmed, ": ")) |colon| {
-            const key = try allocator.dupe(u8, std.mem.trim(u8, trimmed[0..colon], " "));
-            const value = try allocator.dupe(u8, std.mem.trim(u8, trimmed[colon + 2 ..], " "));
-            try headers.put(key, value);
-        }
-    }
-
+    // Use pre-parsed headers from handler to check for Range request
     if (headers.get("Range")) |range_str| {
         if (http.parseRange(range_str, file_size)) |range| {
             try sendPartialContent(io, stream, file, mime_type, filename, file_size, range);
@@ -124,7 +109,7 @@ fn servePreview(
     var pos: usize = 0;
     while (pos < file_size) {
         const to_read = @min(BUFFER_SIZE, file_size - pos);
-        const n = file.readPositionalAll(io, content[pos..pos + to_read], pos) catch |err| {
+        const n = file.readPositionalAll(io, content[pos .. pos + to_read], pos) catch |err| {
             std.debug.print("Error reading file: {s}\n", .{@errorName(err)});
             return err;
         };
@@ -233,12 +218,13 @@ fn sendPartialContent(
     range: http.Range,
 ) !void {
     const end = range.end orelse (file_size - 1);
-    const len = end - range.start + 1;
+    const validated_end = @min(end, file_size - 1);
+    const len = validated_end - range.start + 1;
 
     var len_buf: [32]u8 = undefined;
     const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{len}) catch unreachable;
     var range_buf: [72]u8 = undefined;
-    const range_str = try std.fmt.bufPrint(&range_buf, "bytes {d}-{d}/{d}", .{ range.start, end, file_size });
+    const range_str = try std.fmt.bufPrint(&range_buf, "bytes {d}-{d}/{d}", .{ range.start, validated_end, file_size });
     var disp_buf: [1024]u8 = undefined;
     const disp_str = try std.fmt.bufPrint(&disp_buf, "inline; filename=\"{s}\"", .{filename});
     try http.sendResponseHeaders(stream, io, .partial_content, &[_]struct { []const u8, []const u8 }{
