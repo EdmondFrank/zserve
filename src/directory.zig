@@ -105,6 +105,33 @@ pub fn listDirectory(
         \\    .exec-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; color: #16a34a; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
         \\    .exec-btn:hover { background: #bbf7d0; transform: scale(1.05); }
         \\    .exec-btn:active { transform: scale(0.95); }
+        \\    .bulk-actions { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 0.8em 1em; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+        \\    .bulk-actions input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; }
+        \\    .bulk-actions label { cursor: pointer; font-size: 14px; color: #334155; user-select: none; }
+        \\    .delete-selected-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        \\    .delete-selected-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3); }
+        \\    .delete-selected-btn:disabled { background: #cbd5e1; cursor: not-allowed; opacity: 0.6; }
+        \\    .item-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; margin-right: 12px; flex-shrink: 0; }
+        \\    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        \\    .toast { padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 12px; min-width: 300px; max-width: 450px; animation: slideIn 0.3s ease; transition: all 0.3s ease; }
+        \\    .toast.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+        \\    .toast.error { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+        \\    .toast.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+        \\    .toast-icon { font-size: 20px; }
+        \\    .toast-content { flex: 1; }
+        \\    .toast-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+        \\    .toast-message { font-size: 13px; opacity: 0.95; }
+        \\    .toast-close { background: none; border: none; color: inherit; font-size: 18px; cursor: pointer; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.8; transition: opacity 0.2s; }
+        \\    .toast-close:hover { opacity: 1; }
+        \\    .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.5); border-radius: 0 0 0 8px; transition: width 0.1s linear; }
+        \\    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        \\    @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        \\    .toast.hiding { animation: slideOut 0.3s ease forwards; }
+        \\    .deleting-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 999; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        \\    .deleting-overlay.show { opacity: 1; pointer-events: all; }
+        \\    .deleting-spinner { background: white; padding: 24px 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        \\    .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
+        \\    @keyframes spin { to { transform: rotate(360deg); } }
         \\  </style>
         \\  <script>
         \\    function confirmDelete(filename, path, isDirectory) {
@@ -133,9 +160,123 @@ pub fn listDirectory(
         \\      }
         \\      window.open('/execute?file=' + encodeURIComponent(path), '_blank');
         \\    }
+        \\    // Bulk delete functionality
+        \\    function toggleSelectAll() {
+        \\      const selectAllCheckbox = document.getElementById('selectAll');
+        \\      const checkboxes = document.querySelectorAll('.item-checkbox');
+        \\      checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+        \\      updateDeleteSelectedButton();
+        \\    }
+        \\    function updateDeleteSelectedButton() {
+        \\      const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
+        \\      const btn = document.getElementById('deleteSelectedBtn');
+        \\      btn.textContent = checkedBoxes.length > 0 ? 'Delete Selected (' + checkedBoxes.length + ')' : 'Delete Selected';
+        \\      btn.disabled = checkedBoxes.length === 0;
+        \\    }
+        \\    function showToast(type, title, message, duration = 5000) {
+        \\      let container = document.getElementById('toastContainer');
+        \\      if (!container) {
+        \\        container = document.createElement('div');
+        \\        container.id = 'toastContainer';
+        \\        container.className = 'toast-container';
+        \\        document.body.appendChild(container);
+        \\      }
+        \\      const toast = document.createElement('div');
+        \\      toast.className = 'toast ' + type;
+        \\      const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : '⚠';
+        \\      toast.innerHTML = '<span class="toast-icon">' + icon + '</span><div class="toast-content"><div class="toast-title">' + title + '</div><div class="toast-message">' + message + '</div></div><button class="toast-close" onclick="this.parentElement.remove()">×</button><div class="toast-progress"></div>';
+        \\      container.appendChild(toast);
+        \\      const progressBar = toast.querySelector('.toast-progress');
+        \\      if (duration > 0) {
+        \\        let remaining = duration;
+        \\        const interval = 50;
+        \\        const timer = setInterval(() => {
+        \\          remaining -= interval;
+        \\          const pct = (remaining / duration) * 100;
+        \\          progressBar.style.width = pct + '%';
+        \\          if (remaining <= 0) {
+        \\            clearInterval(timer);
+        \\            hideToast(toast);
+        \\          }
+        \\        }, interval);
+        \\        toast.dataset.timer = timer;
+        \\      }
+        \\      return toast;
+        \\    }
+        \\    function hideToast(toast) {
+        \\      toast.classList.add('hiding');
+        \\      setTimeout(() => toast.remove(), 300);
+        \\    }
+        \\    function showDeletingOverlay(message) {
+        \\      let overlay = document.getElementById('deletingOverlay');
+        \\      if (!overlay) {
+        \\        overlay = document.createElement('div');
+        \\        overlay.id = 'deletingOverlay';
+        \\        overlay.className = 'deleting-overlay';
+        \\        overlay.innerHTML = '<div class="deleting-spinner"><div class="spinner"></div><span id="deletingMessage">Deleting...</span></div>';
+        \\        document.body.appendChild(overlay);
+        \\      }
+        \\      document.getElementById('deletingMessage').textContent = message;
+        \\      overlay.classList.add('show');
+        \\    }
+        \\    function hideDeletingOverlay() {
+        \\      const overlay = document.getElementById('deletingOverlay');
+        \\      if (overlay) overlay.classList.remove('show');
+        \\    }
+        \\    async function deleteSelected() {
+        \\      const checkboxes = document.querySelectorAll('.item-checkbox:checked');
+        \\      if (checkboxes.length === 0) return;
+        \\      const items = Array.from(checkboxes).map(cb => ({
+        \\        name: cb.dataset.name,
+        \\        path: cb.dataset.path,
+        \\        isDirectory: cb.dataset.isDirectory === 'true'
+        \\      }));
+        \\      const dirCount = items.filter(i => i.isDirectory).length;
+        \\      const fileCount = items.length - dirCount;
+        \\      let confirmMsg = 'Are you sure you want to delete:\n';
+        \\      if (fileCount > 0) confirmMsg += '- ' + fileCount + ' file(s)\n';
+        \\      if (dirCount > 0) confirmMsg += '- ' + dirCount + ' director' + (dirCount === 1 ? 'y' : 'ies') + ' (and ALL their contents)\n';
+        \\      confirmMsg += '\nThis action cannot be undone!';
+        \\      if (!confirm(confirmMsg)) return;
+        \\      const btn = document.getElementById('deleteSelectedBtn');
+        \\      btn.disabled = true;
+        \\      showDeletingOverlay('Deleting ' + items.length + ' item(s)...');
+        \\      let successCount = 0;
+        \\      let failCount = 0;
+        \\      const failedItems = [];
+        \\      for (let i = 0; i < items.length; i++) {
+        \\        const item = items[i];
+        \\        document.getElementById('deletingMessage').textContent = 'Deleting ' + (i + 1) + ' of ' + items.length + ': ' + item.name;
+        \\        try {
+        \\          const response = await fetch('/' + item.path, { method: 'DELETE' });
+        \\          if (response.ok) {
+        \\            successCount++;
+        \\          } else {
+        \\            failCount++;
+        \\            failedItems.push(item.name);
+        \\            console.error('Failed to delete:', item.path);
+        \\          }
+        \\        } catch (err) {
+        \\          failCount++;
+        \\          failedItems.push(item.name);
+        \\          console.error('Error deleting:', item.path, err);
+        \\        }
+        \\      }
+        \\      hideDeletingOverlay();
+        \\      if (failCount === 0) {
+        \\        showToast('success', 'Deletion Complete', 'Successfully deleted ' + successCount + ' item(s).', 3000);
+        \\        setTimeout(() => window.location.reload(), 1500);
+        \\      } else if (successCount === 0) {
+        \\        showToast('error', 'Deletion Failed', 'Failed to delete all ' + failCount + ' item(s).', 0);
+        \\        btn.disabled = false;
+        \\      } else {
+        \\        showToast('warning', 'Partially Complete', 'Deleted ' + successCount + ' item(s), failed to delete ' + failCount + ' item(s): ' + failedItems.slice(0, 3).join(', ') + (failedItems.length > 3 ? '...' : ''), 0);
+        \\        setTimeout(() => window.location.reload(), 3000);
+        \\      }
+        \\    }
         \\  </script>
         \\</head><body>
-        \\<h1>Directory listing:
+        \\  <h1>Directory listing:
     );
 
     const title = if (dir_path.len == 0) "/" else dir_path;
@@ -170,6 +311,11 @@ pub fn listDirectory(
         \\      <button type="submit" class="upload-btn">Upload</button>
         \\    </form>
         \\  </div>
+        \\  <div class="bulk-actions">
+        \\    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+        \\    <label for="selectAll">Select All</label>
+        \\    <button id="deleteSelectedBtn" class="delete-selected-btn" onclick="deleteSelected()" disabled>Delete Selected</button>
+        \\  </div>
         \\<ul>
     );
 
@@ -198,7 +344,40 @@ fn sendDirEntry(
     const encoded_name = try url.encode(allocator, entry.name);
     defer allocator.free(encoded_name);
 
-    try writer.writeAll("<li><a href=\"/");
+    // Build full path for checkbox data attribute
+    const full_path = if (std.mem.eql(u8, dir_path, "."))
+        entry.name
+    else
+        try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
+    defer if (!std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
+    const is_dir = entry.kind == .directory;
+
+    // Add checkbox for bulk selection
+    try writer.writeAll("<li><input type=\"checkbox\" class=\"item-checkbox\" onchange=\"updateDeleteSelectedButton()\" data-name=\"");
+    // Escape HTML special chars in name for data attribute
+    for (entry.name) |c| {
+        switch (c) {
+            '&' => try writer.writeAll("&amp;"),
+            '<' => try writer.writeAll("&lt;"),
+            '>' => try writer.writeAll("&gt;"),
+            '"' => try writer.writeAll("&quot;"),
+            else => try writer.writeByte(c),
+        }
+    }
+    try writer.writeAll("\" data-path=\"");
+    // Escape HTML special chars in path for data attribute
+    for (full_path) |c| {
+        switch (c) {
+            '&' => try writer.writeAll("&amp;"),
+            '<' => try writer.writeAll("&lt;"),
+            '>' => try writer.writeAll("&gt;"),
+            '"' => try writer.writeAll("&quot;"),
+            else => try writer.writeByte(c),
+        }
+    }
+    try writer.writeAll(if (is_dir) "\" data-is-directory=\"true\">" else "\" data-is-directory=\"false\">");
+
+    try writer.writeAll("<a href=\"/");
 
     if (!std.mem.eql(u8, dir_path, ".")) {
         try writer.writeAll(dir_path);
@@ -237,13 +416,6 @@ fn sendDirEntry(
     try writer.writeAll("</span>");
 
     // Add delete button for all entries (files and directories)
-    // Build full path for delete
-    const full_path = if (std.mem.eql(u8, dir_path, "."))
-        entry.name
-    else
-        try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
-    defer if (!std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
-
     // Escape the filename for JavaScript
     try writer.writeAll("<button class=\"delete-btn\" onclick=\"confirmDelete('");
     // Escape single quotes in filename for JS
@@ -267,7 +439,6 @@ fn sendDirEntry(
             else => try writer.writeByte(c),
         }
     }
-    const is_dir = entry.kind == .directory;
     if (is_dir) {
         try writer.writeAll("', true)\" title=\"Delete directory\">🗑️</button>");
     } else {
