@@ -74,44 +74,146 @@ pub fn listDirectory(
     try stream_writer.interface.writeAll(
         \\<html><head>
         \\  <meta charset="utf-8">
+        \\  <meta name="color-scheme" content="light dark">
         \\  <style>
-        \\    body { font-family: sans-serif; margin: 2em; }
-        \\    .directory { font-weight: bold; color: #0366d6; }
-        \\    .file { color: #24292e; }
+        \\    :root {
+        \\      --bg-color: #ffffff;
+        \\      --text-color: #24292e;
+        \\      --text-secondary: #666;
+        \\      --border-color: #e2e8f0;
+        \\      --link-color: #0366d6;
+        \\      --hover-bg: #e5e7eb;
+        \\      --upload-form-bg-start: #f8fafc;
+        \\      --upload-form-bg-end: #f1f5f9;
+        \\      --file-input-bg: #fff;
+        \\      --file-input-border: #cbd5e1;
+        \\      --file-input-color: #64748b;
+        \\      --file-input-hover-border: #3b82f6;
+        \\      --file-input-hover-bg: #eff6ff;
+        \\      --filename-color: #334155;
+        \\      --bulk-actions-bg: #f8fafc;
+        \\      --delete-btn-bg: #fee2e2;
+        \\      --delete-btn-border: #fecaca;
+        \\      --delete-btn-color: #dc2626;
+        \\      --delete-btn-hover-bg: #fecaca;
+        \\      --tail-btn-bg: #dbeafe;
+        \\      --tail-btn-border: #bfdbfe;
+        \\      --tail-btn-color: #2563eb;
+        \\      --tail-btn-hover-bg: #bfdbfe;
+        \\      --exec-btn-bg: #dcfce7;
+        \\      --exec-btn-border: #bbf7d0;
+        \\      --exec-btn-color: #16a34a;
+        \\      --exec-btn-hover-bg: #bbf7d0;
+        \\      --theme-toggle-bg: #f1f5f9;
+        \\      --theme-toggle-color: #475569;
+        \\      --theme-toggle-border: #e2e8f0;
+        \\    }
+        \\    @media (prefers-color-scheme: dark) {
+        \\      :root {
+        \\        --bg-color: #0d1117;
+        \\        --text-color: #c9d1d9;
+        \\        --text-secondary: #8b949e;
+        \\        --border-color: #30363d;
+        \\        --link-color: #58a6ff;
+        \\        --hover-bg: #21262d;
+        \\        --upload-form-bg-start: #161b22;
+        \\        --upload-form-bg-end: #0d1117;
+        \\        --file-input-bg: #21262d;
+        \\        --file-input-border: #30363d;
+        \\        --file-input-color: #8b949e;
+        \\        --file-input-hover-border: #58a6ff;
+        \\        --file-input-hover-bg: #1f2937;
+        \\        --filename-color: #c9d1d9;
+        \\        --bulk-actions-bg: #161b22;
+        \\        --delete-btn-bg: #3d1f1f;
+        \\        --delete-btn-border: #5c2b2b;
+        \\        --delete-btn-color: #f85149;
+        \\        --delete-btn-hover-bg: #5c2b2b;
+        \\        --tail-btn-bg: #1f2937;
+        \\        --tail-btn-border: #374151;
+        \\        --tail-btn-color: #58a6ff;
+        \\        --tail-btn-hover-bg: #374151;
+        \\        --exec-btn-bg: #1c3d23;
+        \\        --exec-btn-border: #2d5a35;
+        \\        --exec-btn-color: #3fb950;
+        \\        --exec-btn-hover-bg: #2d5a35;
+        \\        --theme-toggle-bg: #21262d;
+        \\        --theme-toggle-color: #c9d1d9;
+        \\        --theme-toggle-border: #30363d;
+        \\      }
+        \\    }
+        \\    body.dark-mode {
+        \\      --bg-color: #0d1117;
+        \\      --text-color: #c9d1d9;
+        \\      --text-secondary: #8b949e;
+        \\      --border-color: #30363d;
+        \\      --link-color: #58a6ff;
+        \\      --hover-bg: #21262d;
+        \\      --upload-form-bg-start: #161b22;
+        \\      --upload-form-bg-end: #0d1117;
+        \\      --file-input-bg: #21262d;
+        \\      --file-input-border: #30363d;
+        \\      --file-input-color: #8b949e;
+        \\      --file-input-hover-border: #58a6ff;
+        \\      --file-input-hover-bg: #1f2937;
+        \\      --filename-color: #c9d1d9;
+        \\      --bulk-actions-bg: #161b22;
+        \\      --delete-btn-bg: #3d1f1f;
+        \\      --delete-btn-border: #5c2b2b;
+        \\      --delete-btn-color: #f85149;
+        \\      --delete-btn-hover-bg: #5c2b2b;
+        \\      --tail-btn-bg: #1f2937;
+        \\      --tail-btn-border: #374151;
+        \\      --tail-btn-color: #58a6ff;
+        \\      --tail-btn-hover-bg: #374151;
+        \\      --exec-btn-bg: #1c3d23;
+        \\      --exec-btn-border: #2d5a35;
+        \\      --exec-btn-color: #3fb950;
+        \\      --exec-btn-hover-bg: #2d5a35;
+        \\      --theme-toggle-bg: #21262d;
+        \\      --theme-toggle-color: #c9d1d9;
+        \\      --theme-toggle-border: #30363d;
+        \\    }
+        \\    body { font-family: sans-serif; margin: 2em; background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s; }
+        \\    .directory { font-weight: bold; color: var(--link-color); }
+        \\    .file { color: var(--text-color); }
         \\    ul { list-style-type: none; padding: 0; }
         \\    li { margin: 0.5em 0; display: flex; align-items: center; padding: 0.4em 0.8em; border-radius: 8px; transition: background-color 0.2s; }
-        \\    li:hover { background-color: #e5e7eb; }
+        \\    li:hover { background-color: var(--hover-bg); }
         \\    li a { flex: 1; text-decoration: none; }
-        \\    .size { color: #666; margin-left: 1em; min-width: 6em; text-align: right; }
+        \\    .size { color: var(--text-secondary); margin-left: 1em; min-width: 6em; text-align: right; }
         \\    a:hover { text-decoration: underline; }
-        \\    .upload-form { margin: 1.5em 0; padding: 1.5em; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        \\    .upload-form { margin: 1.5em 0; padding: 1.5em; background: linear-gradient(135deg, var(--upload-form-bg-start) 0%, var(--upload-form-bg-end) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         \\    .upload-form form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         \\    .file-input-wrapper { position: relative; display: inline-block; }
         \\    .file-input-wrapper input[type="file"] { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
-        \\    .file-input-label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fff; border: 2px dashed #cbd5e1; border-radius: 8px; color: #64748b; font-size: 14px; cursor: pointer; transition: all 0.2s; }
-        \\    .file-input-wrapper:hover .file-input-label { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+        \\    .file-input-label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--file-input-bg); border: 2px dashed var(--file-input-border); border-radius: 8px; color: var(--file-input-color); font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        \\    .file-input-wrapper:hover .file-input-label { border-color: var(--file-input-hover-border); color: var(--file-input-hover-border); background: var(--file-input-hover-bg); }
         \\    .file-input-label::before { content: "📎"; font-size: 16px; }
         \\    .upload-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3); }
         \\    .upload-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(37, 99, 235, 0.4); }
         \\    .upload-btn:active { transform: translateY(0); }
         \\    .upload-btn::before { content: "⬆️"; font-size: 14px; }
-        \\    .file-name { color: #334155; font-size: 14px; margin-left: 8px; }
-        \\    .delete-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fee2e2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
-        \\    .delete-btn:hover { background: #fecaca; transform: scale(1.05); }
+        \\    .file-name { color: var(--filename-color); font-size: 14px; margin-left: 8px; }
+        \\    .delete-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--delete-btn-bg); border: 1px solid var(--delete-btn-border); border-radius: 6px; color: var(--delete-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .delete-btn:hover { background: var(--delete-btn-hover-bg); transform: scale(1.05); }
         \\    .delete-btn:active { transform: scale(0.95); }
-        \\    .tail-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 6px; color: #2563eb; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
-        \\    .tail-btn:hover { background: #bfdbfe; transform: scale(1.05); }
+        \\    .tail-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--tail-btn-bg); border: 1px solid var(--tail-btn-border); border-radius: 6px; color: var(--tail-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .tail-btn:hover { background: var(--tail-btn-hover-bg); transform: scale(1.05); }
         \\    .tail-btn:active { transform: scale(0.95); }
-        \\    .exec-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; color: #16a34a; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
-        \\    .exec-btn:hover { background: #bbf7d0; transform: scale(1.05); }
+        \\    .exec-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--exec-btn-bg); border: 1px solid var(--exec-btn-border); border-radius: 6px; color: var(--exec-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .exec-btn:hover { background: var(--exec-btn-hover-bg); transform: scale(1.05); }
         \\    .exec-btn:active { transform: scale(0.95); }
-        \\    .bulk-actions { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 0.8em 1em; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+        \\    .bulk-actions { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 0.8em 1em; background: var(--bulk-actions-bg); border-radius: 8px; border: 1px solid var(--border-color); }
         \\    .bulk-actions input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; }
-        \\    .bulk-actions label { cursor: pointer; font-size: 14px; color: #334155; user-select: none; }
+        \\    .bulk-actions label { cursor: pointer; font-size: 14px; color: var(--filename-color); user-select: none; }
         \\    .delete-selected-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
         \\    .delete-selected-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3); }
         \\    .delete-selected-btn:disabled { background: #cbd5e1; cursor: not-allowed; opacity: 0.6; }
         \\    .item-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; margin-right: 12px; flex-shrink: 0; }
+        \\    .theme-toggle { position: fixed; top: 20px; right: 20px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--theme-toggle-bg); border: 1px solid var(--theme-toggle-border); border-radius: 6px; color: var(--theme-toggle-color); font-size: 14px; cursor: pointer; transition: all 0.2s; z-index: 2000; }
+        \\    .theme-toggle:hover { transform: scale(1.05); }
+        \\    .theme-toggle:active { transform: scale(0.95); }
         \\    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
         \\    .toast { padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 12px; min-width: 300px; max-width: 450px; animation: slideIn 0.3s ease; transition: all 0.3s ease; }
         \\    .toast.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
@@ -129,7 +231,7 @@ pub fn listDirectory(
         \\    .toast.hiding { animation: slideOut 0.3s ease forwards; }
         \\    .deleting-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 999; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
         \\    .deleting-overlay.show { opacity: 1; pointer-events: all; }
-        \\    .deleting-spinner { background: white; padding: 24px 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        \\    .deleting-spinner { background: var(--bg-color); padding: 24px 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--text-color); }
         \\    .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
         \\    @keyframes spin { to { transform: rotate(360deg); } }
         \\  </style>
@@ -159,6 +261,33 @@ pub fn listDirectory(
         \\        return;
         \\      }
         \\      window.open('/execute?file=' + encodeURIComponent(path), '_blank');
+        \\    }
+        \\    // Theme toggle functionality
+        \\    function initTheme() {
+        \\      const savedTheme = localStorage.getItem('theme');
+        \\      if (savedTheme === 'dark') {
+        \\        document.body.classList.add('dark-mode');
+        \\      } else if (savedTheme === 'light') {
+        \\        document.body.classList.remove('dark-mode');
+        \\      } else {
+        \\        // Use system preference
+        \\        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        \\          document.body.classList.add('dark-mode');
+        \\        }
+        \\      }
+        \\      updateThemeToggle();
+        \\    }
+        \\    function toggleTheme() {
+        \\      const isDark = document.body.classList.toggle('dark-mode');
+        \\      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        \\      updateThemeToggle();
+        \\    }
+        \\    function updateThemeToggle() {
+        \\      const btn = document.getElementById('themeToggle');
+        \\      if (btn) {
+        \\        const isDark = document.body.classList.contains('dark-mode');
+        \\        btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+        \\      }
         \\    }
         \\    // Bulk delete functionality
         \\    function toggleSelectAll() {
@@ -275,7 +404,8 @@ pub fn listDirectory(
         \\      }
         \\    }
         \\  </script>
-        \\</head><body>
+        \\</head><body onload="initTheme()">
+        \\  <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
         \\  <h1>Directory listing:
     );
 
