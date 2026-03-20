@@ -2,17 +2,22 @@ const std = @import("std");
 const Io = std.Io;
 const http = @import("http.zig");
 const mime_types = @import("mime_types.zig");
+const markdown = @import("markdown.zig");
 
 const BUFFER_SIZE = 64 * 1024;
 const MAX_PREVIEW_SIZE = 1024 * 1024; // 1MB max for preview files
 
-/// Check if a file should be previewed (JSON, YAML, TOML, Shell, Markdown)
+/// Check if a file should be previewed (JSON, YAML, TOML, Shell)
 fn isPreviewableFile(mime_type: []const u8) bool {
     return std.mem.eql(u8, mime_type, "application/json") or
         std.mem.eql(u8, mime_type, "application/yaml") or
         std.mem.eql(u8, mime_type, "application/toml") or
-        std.mem.startsWith(u8, mime_type, "application/x-sh") or
-        std.mem.startsWith(u8, mime_type, "text/markdown");
+        std.mem.startsWith(u8, mime_type, "application/x-sh");
+}
+
+/// Check if a file is a Markdown file
+fn isMarkdownFile(mime_type: []const u8) bool {
+    return std.mem.startsWith(u8, mime_type, "text/markdown");
 }
 
 /// Serve a file to the client, handling range requests
@@ -30,6 +35,18 @@ pub fn serveFile(
     const file_size = try file.length(io);
     const mime_type = mime_types.getMimeType(path);
     const filename = std.fs.path.basename(path);
+
+    // Get parent directory path for "back to directory" link
+    const dir_path = std.fs.path.dirname(path) orelse ".";
+
+    // Check if this is a Markdown file within size limit
+    if (isMarkdownFile(mime_type) and file_size <= MAX_PREVIEW_SIZE) {
+        serveMarkdownPreview(io, allocator, stream, file, path, dir_path, file_size) catch |err| {
+            std.debug.print("Error serving Markdown preview: {s}, falling back to raw file\n", .{@errorName(err)});
+            try serveFullFile(io, stream, file, mime_type, filename, file_size);
+        };
+        return;
+    }
 
     // Check if this is a previewable file (JSON/YAML/TOML) within size limit
     if (isPreviewableFile(mime_type) and file_size <= MAX_PREVIEW_SIZE) {
@@ -90,6 +107,43 @@ fn serveFullFile(
         offset += n;
     }
     try stream_writer.interface.flush();
+}
+
+/// Serve a Markdown file with the enhanced Markdown preview
+fn serveMarkdownPreview(
+    io: Io,
+    allocator: std.mem.Allocator,
+    stream: Io.net.Stream,
+    file: Io.File,
+    file_path: []const u8,
+    dir_path: []const u8,
+    file_size: u64,
+) !void {
+    // Read file content into buffer
+    const content = try allocator.alloc(u8, @as(usize, @intCast(file_size)));
+    defer allocator.free(content);
+
+    var pos: usize = 0;
+    while (pos < file_size) {
+        const to_read = @min(BUFFER_SIZE, file_size - pos);
+        const n = file.readPositionalAll(io, content[pos .. pos + to_read], pos) catch |err| {
+            std.debug.print("Error reading file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+        if (n == 0) break;
+        pos += n;
+    }
+
+    // Use the markdown module to render the preview
+    try markdown.renderMarkdownPreview(
+        io,
+        allocator,
+        stream,
+        file_path,
+        dir_path,
+        content[0..pos],
+        file_size,
+    );
 }
 
 /// Serve a preview of JSON/YAML/TOML file with syntax highlighting
