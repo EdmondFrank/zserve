@@ -11,6 +11,7 @@ const file_server = @import("file_server.zig");
 const upload = @import("upload.zig");
 const delete_file = @import("delete.zig");
 const tail = @import("tail.zig");
+const truncate_file = @import("truncate.zig");
 const execute = @import("execute.zig");
 
 pub const ConnectionContext = struct {
@@ -96,6 +97,35 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    // Handle file truncate endpoint
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/truncate?file=")) {
+        const encoded_file_path = request.path[15..]; // Skip "/truncate?file="
+
+        // URL decode the file path
+        const file_path = url.decode(arena.allocator(), encoded_file_path) catch |err| {
+            std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+
+        // Check for directory traversal attacks
+        if (url.hasTraversal(file_path)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        // Normalize path (remove leading /)
+        const path = if (std.mem.startsWith(u8, file_path, "/"))
+            file_path[1..]
+        else
+            file_path;
+
+        truncate_file.handleTruncate(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, path) catch |err| {
+            std.debug.print("Error handling truncate: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
     // Handle tail endpoint (log file streaming)
     if (std.mem.startsWith(u8, request.path, "/tail")) {
         if (std.mem.startsWith(u8, request.path, "/tail/stream")) {
@@ -110,7 +140,13 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
                 http.sendBadRequest(ctx.stream, ctx.io, "Missing file parameter") catch {};
             }
         } else if (std.mem.startsWith(u8, request.path, "/tail?file=")) {
-            const file_path = request.path[11..]; // Skip "/tail?file="
+            const encoded_file_path = request.path[11..]; // Skip "/tail?file="
+            // URL decode the file path
+            const file_path = url.decode(arena.allocator(), encoded_file_path) catch |err| {
+                std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
+                http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+                return;
+            };
             tail.handleTail(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, file_path) catch |err| {
                 std.debug.print("Error handling tail: {s}\n", .{@errorName(err)});
             };

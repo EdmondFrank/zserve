@@ -104,6 +104,10 @@ pub fn listDirectory(
         \\      --exec-btn-border: #bbf7d0;
         \\      --exec-btn-color: #16a34a;
         \\      --exec-btn-hover-bg: #bbf7d0;
+        \\      --truncate-btn-bg: #fef3c7;
+        \\      --truncate-btn-border: #fde68a;
+        \\      --truncate-btn-color: #d97706;
+        \\      --truncate-btn-hover-bg: #fde68a;
         \\      --theme-toggle-bg: #f1f5f9;
         \\      --theme-toggle-color: #475569;
         \\      --theme-toggle-border: #e2e8f0;
@@ -137,6 +141,10 @@ pub fn listDirectory(
         \\        --exec-btn-border: #2d5a35;
         \\        --exec-btn-color: #3fb950;
         \\        --exec-btn-hover-bg: #2d5a35;
+        \\        --truncate-btn-bg: #451a03;
+        \\        --truncate-btn-border: #78350f;
+        \\        --truncate-btn-color: #fbbf24;
+        \\        --truncate-btn-hover-bg: #78350f;
         \\        --theme-toggle-bg: #21262d;
         \\        --theme-toggle-color: #c9d1d9;
         \\        --theme-toggle-border: #30363d;
@@ -204,6 +212,9 @@ pub fn listDirectory(
         \\    .exec-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--exec-btn-bg); border: 1px solid var(--exec-btn-border); border-radius: 6px; color: var(--exec-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
         \\    .exec-btn:hover { background: var(--exec-btn-hover-bg); transform: scale(1.05); }
         \\    .exec-btn:active { transform: scale(0.95); }
+        \\    .truncate-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--truncate-btn-bg); border: 1px solid var(--truncate-btn-border); border-radius: 6px; color: var(--truncate-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .truncate-btn:hover { background: var(--truncate-btn-hover-bg); transform: scale(1.05); }
+        \\    .truncate-btn:active { transform: scale(0.95); }
         \\    .bulk-actions { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 0.8em 1em; background: var(--bulk-actions-bg); border-radius: 8px; border: 1px solid var(--border-color); }
         \\    .bulk-actions input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; }
         \\    .bulk-actions label { cursor: pointer; font-size: 14px; color: var(--filename-color); user-select: none; }
@@ -261,6 +272,22 @@ pub fn listDirectory(
         \\        return;
         \\      }
         \\      window.open('/execute?file=' + encodeURIComponent(path), '_blank');
+        \\    }
+        \\    function confirmTruncate(filename, encodedPath) {
+        \\      if (!confirm('Are you sure you want to truncate "' + filename + '"?\n\nWARNING: This will permanently delete ALL content in the file!\n\nThis action cannot be undone!')) {
+        \\        return;
+        \\      }
+        \\      fetch('/truncate?file=' + encodedPath, { method: 'POST' })
+        \\        .then(response => {
+        \\          if (response.ok) {
+        \\            window.location.reload();
+        \\          } else {
+        \\            alert('Failed to truncate file');
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error: ' + err.message);
+        \\        });
         \\    }
         \\    // Theme toggle functionality
         \\    function initTheme() {
@@ -545,6 +572,36 @@ fn sendDirEntry(
 
     try writer.writeAll("</span>");
 
+    // Add truncate button for log files (before delete button)
+    if (!is_dir and isLogFile(entry.name)) {
+        try writer.writeAll("<button class=\"truncate-btn\" onclick=\"confirmTruncate('");
+        // Escape single quotes in filename for JS
+        for (entry.name) |c| {
+            switch (c) {
+                '\\', '\'' => {
+                    try writer.writeByte('\\');
+                    try writer.writeByte(c);
+                },
+                else => try writer.writeByte(c),
+            }
+        }
+        try writer.writeAll("', '");
+        // URL encode the path for the truncate endpoint
+        const url_encoded_path = try url.encode(allocator, full_path);
+        defer allocator.free(url_encoded_path);
+        // Escape single quotes in encoded path for JS
+        for (url_encoded_path) |c| {
+            switch (c) {
+                '\\', '\'' => {
+                    try writer.writeByte('\\');
+                    try writer.writeByte(c);
+                },
+                else => try writer.writeByte(c),
+            }
+        }
+        try writer.writeAll("')\" title=\"Truncate log file\">✂️</button>");
+    }
+
     // Add delete button for all entries (files and directories)
     // Escape the filename for JavaScript
     try writer.writeAll("<button class=\"delete-btn\" onclick=\"confirmDelete('");
@@ -676,6 +733,36 @@ fn isShellScript(filename: []const u8) bool {
             return true;
         }
     }
+    return false;
+}
+
+/// Check if a file is a log file based on extension
+fn isLogFile(filename: []const u8) bool {
+    const log_extensions = &[_][]const u8{
+        ".log", ".txt", ".out", ".err",
+    };
+
+    // Convert filename to lowercase for case-insensitive comparison
+    var lower_buf: [256]u8 = undefined;
+    const lower = std.ascii.lowerString(&lower_buf, filename);
+
+    for (log_extensions) |ext| {
+        if (std.mem.endsWith(u8, lower, ext)) {
+            return true;
+        }
+    }
+
+    // Special case for files commonly used as log files
+    const log_names = &[_][]const u8{
+        "log", "logs", "access_log", "error_log", "debug_log", "stdout", "stderr",
+    };
+
+    for (log_names) |name| {
+        if (std.mem.eql(u8, lower, name)) {
+            return true;
+        }
+    }
+
     return false;
 }
 
