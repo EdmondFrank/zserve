@@ -108,6 +108,10 @@ pub fn listDirectory(
         \\      --truncate-btn-border: #fde68a;
         \\      --truncate-btn-color: #d97706;
         \\      --truncate-btn-hover-bg: #fde68a;
+        \\      --download-btn-bg: #ede9fe;
+        \\      --download-btn-border: #ddd6fe;
+        \\      --download-btn-color: #7c3aed;
+        \\      --download-btn-hover-bg: #ddd6fe;
         \\      --theme-toggle-bg: #f1f5f9;
         \\      --theme-toggle-color: #475569;
         \\      --theme-toggle-border: #e2e8f0;
@@ -145,6 +149,10 @@ pub fn listDirectory(
         \\        --truncate-btn-border: #78350f;
         \\        --truncate-btn-color: #fbbf24;
         \\        --truncate-btn-hover-bg: #78350f;
+        \\        --download-btn-bg: #2e1065;
+        \\        --download-btn-border: #5b21b6;
+        \\        --download-btn-color: #a78bfa;
+        \\        --download-btn-hover-bg: #5b21b6;
         \\        --theme-toggle-bg: #21262d;
         \\        --theme-toggle-color: #c9d1d9;
         \\        --theme-toggle-border: #30363d;
@@ -215,6 +223,9 @@ pub fn listDirectory(
         \\    .truncate-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--truncate-btn-bg); border: 1px solid var(--truncate-btn-border); border-radius: 6px; color: var(--truncate-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
         \\    .truncate-btn:hover { background: var(--truncate-btn-hover-bg); transform: scale(1.05); }
         \\    .truncate-btn:active { transform: scale(0.95); }
+        \\    .download-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--download-btn-bg); border: 1px solid var(--download-btn-border); border-radius: 6px; color: var(--download-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; margin-left: 8px; }
+        \\    .download-btn:hover { background: var(--download-btn-hover-bg); transform: scale(1.05); }
+        \\    .download-btn:active { transform: scale(0.95); }
         \\    .bulk-actions { display: flex; align-items: center; gap: 12px; margin: 1em 0; padding: 0.8em 1em; background: var(--bulk-actions-bg); border-radius: 8px; border: 1px solid var(--border-color); }
         \\    .bulk-actions input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6; }
         \\    .bulk-actions label { cursor: pointer; font-size: 14px; color: var(--filename-color); user-select: none; }
@@ -631,12 +642,18 @@ fn sendDirEntry(
     } else {
         try writer.writeAll("', false)\" title=\"Delete file\">🗑️</button>");
 
+        // Add Download button for files
+        try writer.writeAll("<button class=\"download-btn\" onclick=\"window.location.href='/download?file=");
+        // Escape the path for URL
+        const url_encoded_path = try url.encode(allocator, full_path);
+        defer allocator.free(url_encoded_path);
+        try writer.writeAll(url_encoded_path);
+        try writer.writeAll("'\" title=\"Download file\">⬇️</button>");
+
         // Add Tail button for text files
         if (!is_dir and isTextFile(entry.name)) {
             try writer.writeAll("<button class=\"tail-btn\" onclick=\"window.open('/tail?file=");
-            // Escape the path for URL
-            const url_encoded_path = try url.encode(allocator, full_path);
-            defer allocator.free(url_encoded_path);
+            // Escape the path for URL - reuse the same encoded path
             try writer.writeAll(url_encoded_path);
             try writer.writeAll("', '_blank')\" title=\"Tail -f\">📜</button>");
         }

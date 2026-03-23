@@ -309,3 +309,49 @@ fn sendPartialContent(
     }
     try stream_writer.interface.flush();
 }
+
+/// Serve a file as a download with Content-Disposition: attachment
+pub fn serveDownload(
+    io: Io,
+    stream: Io.net.Stream,
+    path: []const u8,
+    root_dir: Io.Dir,
+) !void {
+    const file = try root_dir.openFile(io, path, .{});
+    defer file.close(io);
+
+    const file_size = try file.length(io);
+    const mime_type = mime_types.getMimeType(path);
+    const filename = std.fs.path.basename(path);
+
+    var len_buf: [32]u8 = undefined;
+    const len_str = std.fmt.bufPrint(&len_buf, "{d}", .{file_size}) catch unreachable;
+    var disp_buf: [1024]u8 = undefined;
+    const disp_str = try std.fmt.bufPrint(&disp_buf, "attachment; filename=\"{s}\"", .{filename});
+
+    try http.sendResponseHeaders(stream, io, .ok, &[_]struct { []const u8, []const u8 }{
+        .{ "Content-Type", mime_type },
+        .{ "Content-Length", len_str },
+        .{ "Accept-Ranges", "bytes" },
+        .{ "Content-Disposition", disp_str },
+        .{ "Cache-Control", "no-cache" },
+    });
+
+    var write_buf: [BUFFER_SIZE]u8 = undefined;
+    var stream_writer = stream.writer(io, &write_buf);
+
+    var read_buf: [BUFFER_SIZE]u8 = undefined;
+    var offset: u64 = 0;
+    while (offset < file_size) {
+        const to_read = @min(BUFFER_SIZE, file_size - offset);
+        const n = file.readPositionalAll(io, read_buf[0..to_read], offset) catch |err| {
+            std.debug.print("Error reading file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+        if (n == 0) break;
+
+        try stream_writer.interface.writeAll(read_buf[0..n]);
+        offset += n;
+    }
+    try stream_writer.interface.flush();
+}

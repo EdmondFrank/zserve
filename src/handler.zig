@@ -178,6 +178,28 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    // Handle download endpoint
+    if (std.mem.startsWith(u8, request.path, "/download?file=")) {
+        const file_path = request.path[15..]; // Skip "/download?file="
+        // URL decode the file path
+        const decoded_file_path = url.decode(arena.allocator(), file_path) catch |err| {
+            std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+
+        // Check for directory traversal attacks
+        if (url.hasTraversal(decoded_file_path)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        file_server.serveDownload(ctx.io, ctx.stream, decoded_file_path, ctx.root_dir) catch |err| {
+            std.debug.print("Error handling download: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
     // URL decode the path
     const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
         std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
