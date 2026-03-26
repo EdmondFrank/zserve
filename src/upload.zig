@@ -42,9 +42,7 @@ pub fn handleUpload(
     };
     defer allocator.free(form_data.filename);
     defer allocator.free(form_data.content);
-    if (form_data.path) |path| {
-        defer allocator.free(path);
-    }
+    defer if (form_data.path) |path| allocator.free(path);
 
     // Validate path (no directory traversal)
     if (form_data.path) |path| {
@@ -167,7 +165,7 @@ fn parseMultipartBody(allocator: std.mem.Allocator, body: []const u8, boundary: 
             path_result = path;
         }
 
-        pos = part_start;
+        pos = part_end;
     }
 
     if (file_result) |result| {
