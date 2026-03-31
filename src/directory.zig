@@ -1,6 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 const url = @import("url.zig");
+const git = @import("git.zig");
 
 const DirEntry = struct {
     name: []const u8,
@@ -236,6 +237,9 @@ pub fn listDirectory(
         \\    .theme-toggle { position: fixed; top: 20px; right: 20px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--theme-toggle-bg); border: 1px solid var(--theme-toggle-border); border-radius: 6px; color: var(--theme-toggle-color); font-size: 14px; cursor: pointer; transition: all 0.2s; z-index: 2000; }
         \\    .theme-toggle:hover { transform: scale(1.05); }
         \\    .theme-toggle:active { transform: scale(0.95); }
+        \\    .git-toggle { position: fixed; top: 20px; right: 90px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--exec-btn-bg); border: 1px solid var(--exec-btn-border); border-radius: 6px; color: var(--exec-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; z-index: 2000; }
+        \\    .git-toggle:hover { transform: scale(1.05); }
+        \\    .git-toggle:active { transform: scale(0.95); }
         \\    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
         \\    .toast { padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 12px; min-width: 300px; max-width: 450px; animation: slideIn 0.3s ease; transition: all 0.3s ease; }
         \\    .toast.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
@@ -449,6 +453,16 @@ pub fn listDirectory(
 
     const title = if (dir_path.len == 0) "/" else dir_path;
     try stream_writer.interface.writeAll(title);
+    // Conditionally show git button if the currently browsed directory is a git repo
+    if (git.isGitRepo(io, dir)) {
+        // Encode dir_path for use in the URL query param
+        const encoded_git_path = url.encode(allocator, dir_path) catch dir_path;
+        defer if (encoded_git_path.ptr != dir_path.ptr) allocator.free(encoded_git_path);
+        try stream_writer.interface.writeAll("  <button id=\"gitToggle\" class=\"git-toggle\" onclick=\"window.location.href='/__git__?path=");
+        try stream_writer.interface.writeAll(encoded_git_path);
+        try stream_writer.interface.writeAll("'\">🌿 Git</button>\n");
+    }
+
     try stream_writer.interface.writeAll("</h1>\n");
 
     // Add upload form with pretty button

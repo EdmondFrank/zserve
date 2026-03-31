@@ -13,6 +13,7 @@ const delete_file = @import("delete.zig");
 const tail = @import("tail.zig");
 const truncate_file = @import("truncate.zig");
 const execute = @import("execute.zig");
+const git_view = @import("git_view.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
@@ -196,6 +197,81 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
 
         file_server.serveDownload(ctx.io, ctx.stream, decoded_file_path, ctx.root_dir) catch |err| {
             std.debug.print("Error handling download: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
+    // Handle git view endpoints
+    if (std.mem.eql(u8, request.path, "/__git__") or std.mem.eql(u8, request.path, "/__git__/") or
+        std.mem.startsWith(u8, request.path, "/__git__?"))
+    {
+        // Extract optional ?path= query param (the subdirectory that is the git repo)
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+        const git_path_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "path=")) |pi| {
+                const after = query[pi + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, ".");
+        };
+        const git_path = url.decode(arena.allocator(), git_path_encoded) catch ".";
+        // Sanitize: strip leading slash, reject traversal
+        const safe_git_path = if (std.mem.startsWith(u8, git_path, "/")) git_path[1..] else git_path;
+        if (url.hasTraversal(safe_git_path)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+        git_view.serveGitView(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_git_path) catch |err| {
+            std.debug.print("Error serving git view: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
+    if (std.mem.startsWith(u8, request.path, "/__git__/diff")) {
+        // Extract file, untracked, and root params from query string
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+        const file_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "file=")) |fi| {
+                const after = query[fi + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, "");
+        };
+        const untracked_str = blk: {
+            if (std.mem.indexOf(u8, query, "untracked=")) |ui| {
+                const after = query[ui + 10 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, "0");
+        };
+        const root_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "root=")) |ri| {
+                const after = query[ri + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, ".");
+        };
+        const is_untracked = std.mem.eql(u8, untracked_str, "1");
+
+        const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
+            std.debug.print("Error decoding git diff path: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
+        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
+
+        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        git_view.serveGitDiff(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_root, file_path, is_untracked) catch |err| {
+            std.debug.print("Error serving git diff: {s}\n", .{@errorName(err)});
         };
         return;
     }
