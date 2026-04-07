@@ -293,8 +293,8 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     const path = url.normalizePath(decoded_path);
     const path_to_open = if (path.len == 0) "." else path;
 
-    // Try to open as directory first
-    if (ctx.root_dir.openDir(ctx.io, path_to_open, .{ .iterate = true })) |dir| {
+    // Try to open as directory first (follow symlinks to support symlinked directories)
+    if (ctx.root_dir.openDir(ctx.io, path_to_open, .{ .iterate = true, .follow_symlinks = true })) |dir| {
         defer dir.close(ctx.io);
         directory.listDirectory(ctx.io, arena.allocator(), ctx.stream, path_to_open, ctx.root_dir) catch |err| {
             std.debug.print("Error listing directory: {s}\n", .{@errorName(err)});

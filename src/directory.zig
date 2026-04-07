@@ -6,11 +6,24 @@ const git = @import("git.zig");
 const DirEntry = struct {
     name: []const u8,
     kind: Io.File.Kind,
+    is_symlink: bool,
+    /// For symlinks: the resolved target kind. null means broken symlink.
+    target_kind: ?Io.File.Kind,
     size: u64,
 
+    /// Effective kind for sorting: use target_kind for symlinks, kind otherwise.
+    fn effectiveKind(self: DirEntry) Io.File.Kind {
+        if (self.is_symlink) {
+            return self.target_kind orelse .unknown;
+        }
+        return self.kind;
+    }
+
     fn lessThan(_: void, a: DirEntry, b: DirEntry) bool {
-        if (a.kind == .directory and b.kind != .directory) return true;
-        if (a.kind != .directory and b.kind == .directory) return false;
+        const ak = a.effectiveKind();
+        const bk = b.effectiveKind();
+        if (ak == .directory and bk != .directory) return true;
+        if (ak != .directory and bk == .directory) return false;
         return std.mem.lessThan(u8, a.name, b.name);
     }
 };
@@ -25,7 +38,7 @@ pub fn listDirectory(
 ) !void {
     var dir = try root_dir.openDir(io, dir_path, .{
         .iterate = true,
-        .follow_symlinks = false,
+        .follow_symlinks = true,
     });
     defer dir.close(io);
 
@@ -40,21 +53,51 @@ pub fn listDirectory(
     // Collect all entries with file sizes
     var iter = dir.iterate();
     while (try iter.next(io)) |entry| {
-        const size = if (entry.kind == .file) size_blk: {
-            const full_path = if (dir_path.len == 0 or std.mem.eql(u8, dir_path, "."))
-                entry.name
-            else
-                try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
-            defer if (dir_path.len > 0 and !std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
+        const is_symlink = entry.kind == .sym_link;
 
-            const file = root_dir.openFile(io, full_path, .{}) catch break :size_blk 0;
-            defer file.close(io);
-            break :size_blk file.length(io) catch 0;
-        } else 0;
+        // Build the full path for this entry (needed for open calls)
+        const full_path = if (dir_path.len == 0 or std.mem.eql(u8, dir_path, "."))
+            entry.name
+        else
+            try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
+        defer if (dir_path.len > 0 and !std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
+
+        var target_kind: ?Io.File.Kind = null;
+        var size: u64 = 0;
+
+        if (is_symlink) {
+            // Try to resolve the symlink target by opening as a file first,
+            // then as a directory. openFile/openDir follow symlinks by default.
+            if (root_dir.openFile(io, full_path, .{})) |file| {
+                file.close(io);
+                target_kind = .file;
+                // Get file size through the symlink
+                if (root_dir.openFile(io, full_path, .{})) |f| {
+                    defer f.close(io);
+                    size = f.length(io) catch 0;
+                } else |_| {}
+            } else |_| {
+                // Not a file — try as directory
+                if (root_dir.openDir(io, full_path, .{ .iterate = false, .follow_symlinks = true })) |d| {
+                    d.close(io);
+                    target_kind = .directory;
+                } else |_| {
+                    // Broken symlink — target_kind stays null
+                }
+            }
+        } else if (entry.kind == .file) {
+            const file = root_dir.openFile(io, full_path, .{}) catch null;
+            if (file) |f| {
+                defer f.close(io);
+                size = f.length(io) catch 0;
+            }
+        }
 
         try list.append(allocator, .{
             .name = try allocator.dupe(u8, entry.name),
             .kind = entry.kind,
+            .is_symlink = is_symlink,
+            .target_kind = target_kind,
             .size = size,
         });
     }
@@ -522,7 +565,8 @@ fn sendDirEntry(
     entry: DirEntry,
     dir_path: []const u8,
 ) !void {
-    const class = if (entry.kind == .directory) "directory" else "file";
+    const effective_kind = entry.effectiveKind();
+    const class = if (effective_kind == .directory) "directory" else "file";
     const encoded_name = try url.encode(allocator, entry.name);
     defer allocator.free(encoded_name);
 
@@ -532,7 +576,7 @@ fn sendDirEntry(
     else
         try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.name });
     defer if (!std.mem.eql(u8, dir_path, ".")) allocator.free(full_path);
-    const is_dir = entry.kind == .directory;
+    const is_dir = effective_kind == .directory;
 
     // Add checkbox for bulk selection
     try writer.writeAll("<li><input type=\"checkbox\" class=\"item-checkbox\" onchange=\"updateDeleteSelectedButton()\" data-name=\"");
@@ -582,8 +626,20 @@ fn sendDirEntry(
         }
     }
 
-    if (entry.kind == .directory) {
+    if (effective_kind == .directory) {
         try writer.writeAll("/");
+    }
+    // Symlink indicator
+    if (entry.is_symlink) {
+        if (entry.target_kind) |tk| {
+            if (tk == .directory) {
+                try writer.writeAll(" <span title=\"Symlink to directory\" style=\"font-size:0.85em;opacity:0.8;\">🔗→📁</span>");
+            } else {
+                try writer.writeAll(" <span title=\"Symlink to file\" style=\"font-size:0.85em;opacity:0.8;\">🔗→📄</span>");
+            }
+        } else {
+            try writer.writeAll(" <span title=\"Broken symlink\" style=\"font-size:0.85em;color:#ef4444;\">🔗⚠️</span>");
+        }
     }
 
     try writer.writeAll("</a><span class=\"size\">");
@@ -598,7 +654,7 @@ fn sendDirEntry(
     try writer.writeAll("</span>");
 
     // Add truncate button for log files (before delete button)
-    if (!is_dir and isLogFile(entry.name)) {
+    if (!is_dir and entry.target_kind != null and isLogFile(entry.name)) {
         try writer.writeAll("<button class=\"truncate-btn\" onclick=\"confirmTruncate('");
         // Escape single quotes in filename for JS
         for (entry.name) |c| {
@@ -655,6 +711,12 @@ fn sendDirEntry(
         try writer.writeAll("', true)\" title=\"Delete directory\">🗑️</button>");
     } else {
         try writer.writeAll("', false)\" title=\"Delete file\">🗑️</button>");
+
+        // Add Download button for files (skip broken symlinks)
+        if (entry.is_symlink and entry.target_kind == null) {
+            try writer.writeAll("</li>\n");
+            return;
+        }
 
         // Add Download button for files
         try writer.writeAll("<button class=\"download-btn\" onclick=\"window.location.href='/download?file=");
