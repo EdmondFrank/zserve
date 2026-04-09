@@ -887,9 +887,11 @@ fn escapeForHtml(allocator: std.mem.Allocator, input: []const u8) error{OutOfMem
     var escape_count: usize = 0;
     for (input) |c| {
         switch (c) {
-            '&', '<', '>' => escape_count += 4, // &amp; &lt; &gt;
-            '"' => escape_count += 5, // &#34;
-            '\'' => escape_count += 4, // &#39;
+            '&' => escape_count += 4, // &amp; = 5 bytes, net +4
+            '<' => escape_count += 3, // &lt; = 4 bytes, net +3
+            '>' => escape_count += 3, // &gt; = 4 bytes, net +3
+            '"' => escape_count += 5, // &quot; = 6 bytes, net +5
+            '\'' => escape_count += 4, // &#x27; = 5 bytes, net +4
             else => {},
         }
     }
