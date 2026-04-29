@@ -891,7 +891,7 @@ fn escapeForHtml(allocator: std.mem.Allocator, input: []const u8) error{OutOfMem
             '<' => escape_count += 3, // &lt; = 4 bytes, net +3
             '>' => escape_count += 3, // &gt; = 4 bytes, net +3
             '"' => escape_count += 5, // &quot; = 6 bytes, net +5
-            '\'' => escape_count += 4, // &#x27; = 5 bytes, net +4
+            '\'' => escape_count += 5, // &#x27; = 6 bytes, net +5
             else => {},
         }
     }
@@ -917,8 +917,8 @@ fn escapeForHtml(allocator: std.mem.Allocator, input: []const u8) error{OutOfMem
                 i += 6;
             },
             '\'' => {
-                @memcpy(result[i .. i + 5], "&#x27;");
-                i += 5;
+                @memcpy(result[i .. i + 6], "&#x27;");
+                i += 6;
             },
             else => {
                 result[i] = c;
