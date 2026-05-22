@@ -136,8 +136,14 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .log-section { border-top: 1px solid var(--border); }
         \\    .log-toggle { width: 100%; padding: 8px 12px; background: var(--bg3); border: none; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between; align-items: center; }
         \\    .log-toggle:hover { background: var(--hover); }
-        \\    .log-content { display: none; overflow-y: auto; max-height: 200px; padding: 8px 12px; font-family: monospace; font-size: 11px; color: var(--text2); white-space: pre; line-height: 1.5; }
+        \\    .log-content { display: none; overflow-y: auto; max-height: 200px; }
         \\    .log-content.open { display: block; }
+        \\    .commit-item { display: flex; align-items: flex-start; gap: 6px; padding: 6px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; font-size: 11px; font-family: monospace; line-height: 1.4; }
+        \\    .commit-item:hover { background: var(--hover); }
+        \\    .commit-item.active { background: var(--hover); border-left: 3px solid #2d6a4f; padding-left: 9px; }
+        \\    .commit-graph { color: var(--text2); white-space: pre; flex-shrink: 0; }
+        \\    .commit-hash { color: #0969da; font-weight: 600; flex-shrink: 0; }
+        \\    .commit-message { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         \\    .diff-panel { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: var(--bg); }
         \\    .diff-header { padding: 0.75em 1em; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2); background: var(--bg3); display: flex; align-items: center; gap: 8px; }
         \\    .diff-filename { font-family: monospace; color: var(--text); font-weight: 500; }
@@ -302,6 +308,10 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\      const arrow = btn.querySelector('span');
         \\      content.classList.toggle('open');
         \\      arrow.textContent = content.classList.contains('open') ? '▼' : '▶';
+        \\      if (content.classList.contains('open') && !content.dataset.rendered) {
+        \\        renderCommits();
+        \\        content.dataset.rendered = 'true';
+        \\      }
         \\    }
         \\    // Active file tracking
         \\    let activeIdx = -1;
@@ -321,6 +331,46 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\        .then(r => r.text())
         \\        .then(text => { body.innerHTML = renderDiff(text); })
         \\        .catch(err => { body.innerHTML = '<div class="no-changes">Error loading diff: ' + escHtml(err.message) + '</div>'; });
+        \\    }
+        \\    function loadCommitDiff(hash, commitEl) {
+        \\      if (activeIdx >= 0) {
+        \\        const prev = document.getElementById('fi-' + activeIdx);
+        \\        if (prev) prev.classList.remove('active');
+        \\        activeIdx = -1;
+        \\      }
+        \\      const prevCommit = document.querySelector('.commit-item.active');
+        \\      if (prevCommit) prevCommit.classList.remove('active');
+        \\      if (commitEl) commitEl.classList.add('active');
+        \\      const header = document.getElementById('diffHeader');
+        \\      const body = document.getElementById('diffBody');
+        \\      header.innerHTML = '<span class="diff-filename">Commit: ' + escHtml(hash) + '</span>';
+        \\      body.innerHTML = '<div class="diff-loading"><div class="spinner"></div>Loading commit diff...</div>';
+        \\      fetch('/__git__/commit-diff?hash=' + encodeURIComponent(hash) + '&root=' + encodeURIComponent(GIT_ROOT))
+        \\        .then(r => r.text())
+        \\        .then(text => { body.innerHTML = renderDiff(text); })
+        \\        .catch(err => { body.innerHTML = '<div class="no-changes">Error loading commit diff: ' + escHtml(err.message) + '</div>'; });
+        \\    }
+        \\    function renderCommits() {
+        \\      const logContent = document.getElementById('logContent');
+        \\      const rawText = logContent.textContent;
+        \\      logContent.innerHTML = '';
+        \\      const lines = rawText.split('\n');
+        \\      for (let line of lines) {
+        \\        if (!line.trim()) continue;
+        \\        const match = line.match(/^([*|\/ \\]+)\s*([a-f0-9]{7,})\s+(.*)$/);
+        \\        if (match) {
+        \\          const graph = match[1];
+        \\          const hash = match[2];
+        \\          const message = match[3];
+        \\          const div = document.createElement('div');
+        \\          div.className = 'commit-item';
+        \\          div.onclick = () => loadCommitDiff(hash, div);
+        \\          div.innerHTML = '<span class="commit-graph">' + escHtml(graph) + '</span>' +
+        \\                          '<span class="commit-hash">' + escHtml(hash) + '</span>' +
+        \\                          '<span class="commit-message">' + escHtml(message) + '</span>';
+        \\          logContent.appendChild(div);
+        \\        }
+        \\      }
         \\    }
         \\    function escHtml(s) {
         \\      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -380,6 +430,37 @@ pub fn serveGitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
     const diff = git.getFileDiff(io, allocator, git_dir, file_path, is_untracked) catch |err| {
         std.debug.print("Failed to get diff for {s}: {s}\n", .{ file_path, @errorName(err) });
         try http.sendErrorResponse(stream, io, .internal_server_error, "Failed to get diff");
+        return;
+    };
+    defer allocator.free(diff);
+
+    try http.sendResponseHeaders(stream, io, .ok, &[_]struct { []const u8, []const u8 }{
+        .{ "Content-Type", "text/plain; charset=utf-8" },
+    });
+
+    var write_buf: [65536]u8 = undefined;
+    var stream_writer = stream.writer(io, &write_buf);
+    try stream_writer.interface.writeAll(diff);
+    try stream_writer.interface.flush();
+}
+
+/// Serve the diff for a specific commit as plain text (for AJAX)
+pub fn serveCommitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, root_dir: Io.Dir, dir_path: []const u8, commit_hash: []const u8) !void {
+    // Open the target git directory (may be a subdirectory of root_dir)
+    const is_root = dir_path.len == 0 or std.mem.eql(u8, dir_path, ".");
+    const git_dir = if (is_root) root_dir else blk: {
+        const d = root_dir.openDir(io, dir_path, .{}) catch |err| {
+            std.debug.print("Failed to open git dir {s}: {s}\n", .{ dir_path, @errorName(err) });
+            try http.sendErrorResponse(stream, io, .not_found, "Directory not found");
+            return;
+        };
+        break :blk d;
+    };
+    defer if (!is_root) git_dir.close(io);
+
+    const diff = git.getCommitDiff(io, allocator, git_dir, commit_hash) catch |err| {
+        std.debug.print("Failed to get commit diff for {s}: {s}\n", .{ commit_hash, @errorName(err) });
+        try http.sendErrorResponse(stream, io, .internal_server_error, "Failed to get commit diff");
         return;
     };
     defer allocator.free(diff);

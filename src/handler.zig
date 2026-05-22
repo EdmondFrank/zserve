@@ -276,6 +276,45 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    if (std.mem.startsWith(u8, request.path, "/__git__/commit-diff")) {
+        // Extract hash and root params from query string
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+        const hash_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "hash=")) |hi| {
+                const after = query[hi + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, "");
+        };
+        const root_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "root=")) |ri| {
+                const after = query[ri + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, ".");
+        };
+
+        const commit_hash = url.decode(arena.allocator(), hash_encoded) catch |err| {
+            std.debug.print("Error decoding commit hash: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
+        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
+
+        if (url.hasTraversal(safe_root)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        git_view.serveCommitDiff(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_root, commit_hash) catch |err| {
+            std.debug.print("Error serving commit diff: {s}\n", .{@errorName(err)});
+        };
+        return;
+    }
+
     // URL decode the path
     const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
         std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});

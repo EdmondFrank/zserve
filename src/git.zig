@@ -205,3 +205,13 @@ pub fn getGitLog(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir) ![]cons
         "log", "--oneline", "--graph", "--decorate", "-20",
     }) catch allocator.dupe(u8, "(no log available)");
 }
+
+/// Get the diff for a specific commit. Returns owned slice.
+pub fn getCommitDiff(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, commit_hash: []const u8) ![]const u8 {
+    return runGit(io, allocator, root_dir, &[_][]const u8{
+        "show", commit_hash,
+    }) catch |err| {
+        std.debug.print("Failed to get commit diff for {s}: {s}\n", .{ commit_hash, @errorName(err) });
+        return allocator.dupe(u8, "(no diff available)");
+    };
+}
