@@ -118,8 +118,11 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .theme-toggle:hover { background: rgba(255,255,255,0.25); }
         \\    .layout { display: flex; height: calc(100vh - 52px); overflow: hidden; }
         \\    .sidebar { width: 320px; min-width: 220px; max-width: 480px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg2); overflow: hidden; }
-        \\    .sidebar-header { padding: 0.75em 1em; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg3); }
+        \\    .sidebar-header { padding: 0.75em 1em; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg3); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; }
+        \\    .sidebar-header:hover { background: var(--hover); }
         \\    .file-list { flex: 1; overflow-y: auto; }
+        \\    .file-list-container { display: block; overflow-y: auto; max-height: none; }
+        \\    .file-list-container.collapsed { display: none; }
         \\    .file-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; font-size: 13px; }
         \\    .file-item:hover { background: var(--hover); }
         \\    .file-item.active { background: var(--hover); border-left: 3px solid #2d6a4f; padding-left: 9px; }
@@ -216,15 +219,16 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
     }
 
     // Render Staged Changes section
-    try html.appendSlice(allocator, "      <div class=\"sidebar-header\">Staged Changes (");
+    try html.appendSlice(allocator, "      <button class=\"sidebar-header\" onclick=\"toggleFileSection(this, 'stagedFiles')\">Staged Changes (");
     var staged_count_buf: [32]u8 = undefined;
     const staged_count_str = std.fmt.bufPrint(&staged_count_buf, "{d}", .{staged_files.items.len}) catch "?";
     try html.appendSlice(allocator, staged_count_str);
-    try html.appendSlice(allocator, ")</div>\n      <div class=\"file-list\">\n");
+    try html.appendSlice(allocator, ") <span>▼</span></button>\n      <div class=\"file-list-container\" id=\"stagedFiles\">\n");
 
     if (staged_files.items.len == 0) {
-        try html.appendSlice(allocator, "        <div class=\"no-changes\">No staged changes</div>\n");
+        try html.appendSlice(allocator, "        <div class=\"file-list no-changes\">No staged changes</div>\n");
     } else {
+        try html.appendSlice(allocator, "        <div class=\"file-list\">\n");
         for (staged_files.items) |item| {
             const f = item.file;
             const i = item.index;
@@ -271,20 +275,22 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
             try html.appendSlice(allocator, "')\" title=\"Unstage file\">−</button>\n");
             try html.appendSlice(allocator, "        </div>\n");
         }
+        try html.appendSlice(allocator, "        </div>\n");
     }
 
     try html.appendSlice(allocator, "      </div>\n");
 
     // Render Changes section
-    try html.appendSlice(allocator, "      <div class=\"sidebar-header\" style=\"border-top: 1px solid var(--border);\">Changes (");
+    try html.appendSlice(allocator, "      <button class=\"sidebar-header\" style=\"border-top: 1px solid var(--border);\" onclick=\"toggleFileSection(this, 'unstagedFiles')\">Changes (");
     var unstaged_count_buf: [32]u8 = undefined;
     const unstaged_count_str = std.fmt.bufPrint(&unstaged_count_buf, "{d}", .{unstaged_files.items.len}) catch "?";
     try html.appendSlice(allocator, unstaged_count_str);
-    try html.appendSlice(allocator, ")</div>\n      <div class=\"file-list\">\n");
+    try html.appendSlice(allocator, ") <span>▼</span></button>\n      <div class=\"file-list-container\" id=\"unstagedFiles\">\n");
 
     if (unstaged_files.items.len == 0) {
-        try html.appendSlice(allocator, "        <div class=\"no-changes\">No unstaged changes</div>\n");
+        try html.appendSlice(allocator, "        <div class=\"file-list no-changes\">No unstaged changes</div>\n");
     } else {
+        try html.appendSlice(allocator, "        <div class=\"file-list\">\n");
         for (unstaged_files.items) |item| {
             const f = item.file;
             const i = item.index;
@@ -334,6 +340,7 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
             try html.appendSlice(allocator, "')\" title=\"Stage file\">+</button>\n");
             try html.appendSlice(allocator, "        </div>\n");
         }
+        try html.appendSlice(allocator, "        </div>\n");
     }
 
     try html.appendSlice(allocator, "      </div>\n");
@@ -407,6 +414,13 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\        renderCommits();
         \\        content.dataset.rendered = 'true';
         \\      }
+        \\    }
+        \\    // File section toggle
+        \\    function toggleFileSection(btn, contentId) {
+        \\      const content = document.getElementById(contentId);
+        \\      const arrow = btn.querySelector('span');
+        \\      content.classList.toggle('collapsed');
+        \\      arrow.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
         \\    }
         \\    // Active file tracking
         \\    let activeIdx = -1;
