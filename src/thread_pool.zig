@@ -46,9 +46,12 @@ pub const ThreadPool = struct {
         self.queue_cond.broadcast(self.io);
         self.queue_mutex.unlock(self.io);
 
-        // Wait for all workers to finish
+        // Detach all worker threads instead of joining them
+        // This allows the main thread to exit immediately without blocking on stuck workers
+        // Workers that are idle will exit cleanly when they check the shutdown flag
+        // Workers that are stuck in long operations will be terminated by the OS when the process exits
         for (self.workers.items) |worker| {
-            worker.join();
+            worker.detach();
         }
 
         // Clean up

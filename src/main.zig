@@ -46,18 +46,21 @@ pub fn main(init: std.process.Init) !void {
     defer thread_pool.deinit();
     std.debug.print("Thread pool initialized with {d} workers\n", .{num_workers});
 
+    // Parse address and create listener
+    const address = try Io.net.IpAddress.parseIp4(args.host, args.port);
+    var server = try address.listen(io, .{ .reuse_address = true });
+    defer server.deinit(io);
+
     // Register SIGINT/SIGTERM handlers so Ctrl+C triggers a graceful shutdown
-    // instead of abruptly killing the process.
     const SigHandler = struct {
         var ctx: *ServerContext = undefined;
-        fn handle(_: c_int) callconv(.c) void {
+        fn handle(sig: c_int) callconv(.c) void {
+            std.debug.print("\nReceived signal {d}, initiating shutdown...\n", .{sig});
             ctx.requestShutdown();
         }
     };
     SigHandler.ctx = &server_ctx;
     const sig_action = std.posix.Sigaction{
-        // @ptrCast bridges the platform-specific signal parameter type
-        // (e.g. c.SIG__enum on macOS vs c_int on Linux) to our handler.
         .handler = .{ .handler = @ptrCast(&SigHandler.handle) },
         .mask = std.posix.sigemptyset(),
         .flags = 0,
@@ -65,34 +68,41 @@ pub fn main(init: std.process.Init) !void {
     std.posix.sigaction(std.posix.SIG.INT, &sig_action, null);
     std.posix.sigaction(std.posix.SIG.TERM, &sig_action, null);
 
-    // Parse address and create listener
-    const address = try Io.net.IpAddress.parseIp4(args.host, args.port);
-    var server = try address.listen(io, .{ .reuse_address = true });
-    defer server.deinit(io);
-
     std.debug.print("Server listening on http://{s}:{d}\n", .{ args.host, args.port });
     std.debug.print("Serving from root directory: {s}\n", .{args.root_path});
     std.debug.print("Press Ctrl+C to shutdown\n", .{});
 
-    // Set a receive timeout on the server socket so accept() returns periodically
-    // and allows checking the shutdown flag. This prevents indefinite blocking.
+    // Timeout for individual client connections to prevent slow clients from hanging workers
     const timeout = std.posix.timeval{ .sec = 1, .usec = 0 };
-    std.posix.setsockopt(
-        server.socket.handle,
-        std.posix.SOL.SOCKET,
-        std.posix.SO.RCVTIMEO,
-        std.mem.asBytes(&timeout),
-    ) catch |err| {
-        std.debug.print("Warning: Failed to set socket timeout: {s}\n", .{@errorName(err)});
-    };
 
-    // Accept connections loop
+    // Accept connections loop with poll-based timeout checking
     while (!server_ctx.isShutdownRequested()) {
+        // Use poll() to check if there's a connection ready with timeout
+        var poll_fds = [_]std.posix.pollfd{
+            .{
+                .fd = server.socket.handle,
+                .events = std.posix.POLL.IN,
+                .revents = 0,
+            },
+        };
+
+        // Poll with 100ms timeout to check shutdown flag frequently
+        _ = std.posix.poll(&poll_fds, 100) catch {
+            if (server_ctx.isShutdownRequested()) break;
+            continue;
+        };
+
+        // Check shutdown flag after poll
+        if (server_ctx.isShutdownRequested()) break;
+
+        // Check if there's actually a connection ready
+        if (poll_fds[0].revents & std.posix.POLL.IN == 0) continue;
+
         const stream = server.accept(io) catch |err| {
             if (server_ctx.isShutdownRequested()) break;
-            // EAGAIN/ETIMEDOUT are expected when the timeout expires - just continue
-            if (err == error.WouldBlock or err == error.TimedOut) continue;
-            // std.debug.print("Error accepting connection: {s}\n", .{@errorName(err)});
+            // Handle common errors
+            if (err == error.WouldBlock or err == error.ConnectionAborted) continue;
+            std.debug.print("Error accepting connection: {s}\n", .{@errorName(err)});
             continue;
         };
 
