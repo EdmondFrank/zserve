@@ -133,6 +133,12 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .badge-staged-del { background: #f8d7da; color: #58151c; }
         \\    .badge-renamed { background: #cfe2ff; color: #084298; }
         \\    .badge-untracked { background: #e2e3e5; color: #41464b; }
+        \\    .stage-btn { width: 24px; height: 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; flex-shrink: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+        \\    .stage-btn:hover { transform: scale(1.1); }
+        \\    .stage-btn.add { background: #d1e7dd; color: #0a3622; }
+        \\    .stage-btn.add:hover { background: #a3cfbb; }
+        \\    .stage-btn.remove { background: #f8d7da; color: #58151c; }
+        \\    .stage-btn.remove:hover { background: #f1aeb5; }
         \\    .log-section { border-top: 1px solid var(--border); }
         \\    .log-toggle { width: 100%; padding: 8px 12px; background: var(--bg3); border: none; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between; align-items: center; }
         \\    .log-toggle:hover { background: var(--hover); }
@@ -192,17 +198,96 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\  </div>
         \\  <div class="layout">
         \\    <div class="sidebar">
-        \\      <div class="sidebar-header">Changed Files (
     );
-    var count_buf: [32]u8 = undefined;
-    const count_str = std.fmt.bufPrint(&count_buf, "{d}", .{status.files.len}) catch "?";
-    try html.appendSlice(allocator, count_str);
+
+    // Separate files into staged and unstaged
+    var staged_files = std.ArrayList(struct { file: git.GitFile, index: usize }).initCapacity(allocator, status.files.len) catch return error.OutOfMemory;
+    defer staged_files.deinit(allocator);
+    var unstaged_files = std.ArrayList(struct { file: git.GitFile, index: usize }).initCapacity(allocator, status.files.len) catch return error.OutOfMemory;
+    defer unstaged_files.deinit(allocator);
+
+    for (status.files, 0..) |f, i| {
+        const is_staged = f.status == .staged_modified or f.status == .staged_added or f.status == .staged_deleted;
+        if (is_staged) {
+            try staged_files.append(allocator, .{ .file = f, .index = i });
+        } else {
+            try unstaged_files.append(allocator, .{ .file = f, .index = i });
+        }
+    }
+
+    // Render Staged Changes section
+    try html.appendSlice(allocator, "      <div class=\"sidebar-header\">Staged Changes (");
+    var staged_count_buf: [32]u8 = undefined;
+    const staged_count_str = std.fmt.bufPrint(&staged_count_buf, "{d}", .{staged_files.items.len}) catch "?";
+    try html.appendSlice(allocator, staged_count_str);
     try html.appendSlice(allocator, ")</div>\n      <div class=\"file-list\">\n");
 
-    if (status.files.len == 0) {
-        try html.appendSlice(allocator, "        <div class=\"no-changes\">✓ Working tree clean</div>\n");
+    if (staged_files.items.len == 0) {
+        try html.appendSlice(allocator, "        <div class=\"no-changes\">No staged changes</div>\n");
     } else {
-        for (status.files, 0..) |f, i| {
+        for (staged_files.items) |item| {
+            const f = item.file;
+            const i = item.index;
+            const badge = statusBadge(f.status);
+            try html.appendSlice(allocator, "        <div class=\"file-item\" id=\"fi-");
+            var idx_buf: [32]u8 = undefined;
+            const idx_str = std.fmt.bufPrint(&idx_buf, "{d}", .{i}) catch "0";
+            try html.appendSlice(allocator, idx_str);
+            try html.appendSlice(allocator, "\" onclick=\"loadDiff(");
+            try html.appendSlice(allocator, idx_str);
+            try html.appendSlice(allocator, ", '");
+            // JS-escape the path (single quotes)
+            for (f.path) |c| {
+                switch (c) {
+                    '\\' => try html.appendSlice(allocator, "\\\\"),
+                    '\'' => try html.appendSlice(allocator, "\\'"),
+                    else => try html.append(allocator, c),
+                }
+            }
+            try html.appendSlice(allocator, "', false)\">\n");
+            try html.appendSlice(allocator, "          <span class=\"badge ");
+            try html.appendSlice(allocator, badge.class);
+            try html.appendSlice(allocator, "\">");
+            try html.appendSlice(allocator, badge.label);
+            try html.appendSlice(allocator, "</span>\n");
+            try html.appendSlice(allocator, "          <div style=\"flex:1;overflow:hidden\">\n");
+            try html.appendSlice(allocator, "            <div class=\"file-path\">");
+            try appendEscaped(&html, allocator, f.path);
+            try html.appendSlice(allocator, "</div>\n");
+            if (f.old_path) |op| {
+                try html.appendSlice(allocator, "            <div class=\"file-old-path\">← ");
+                try appendEscaped(&html, allocator, op);
+                try html.appendSlice(allocator, "</div>\n");
+            }
+            try html.appendSlice(allocator, "          </div>\n");
+            try html.appendSlice(allocator, "          <button class=\"stage-btn remove\" onclick=\"event.stopPropagation(); unstageFile('");
+            for (f.path) |c| {
+                switch (c) {
+                    '\\' => try html.appendSlice(allocator, "\\\\"),
+                    '\'' => try html.appendSlice(allocator, "\\'"),
+                    else => try html.append(allocator, c),
+                }
+            }
+            try html.appendSlice(allocator, "')\" title=\"Unstage file\">−</button>\n");
+            try html.appendSlice(allocator, "        </div>\n");
+        }
+    }
+
+    try html.appendSlice(allocator, "      </div>\n");
+
+    // Render Changes section
+    try html.appendSlice(allocator, "      <div class=\"sidebar-header\" style=\"border-top: 1px solid var(--border);\">Changes (");
+    var unstaged_count_buf: [32]u8 = undefined;
+    const unstaged_count_str = std.fmt.bufPrint(&unstaged_count_buf, "{d}", .{unstaged_files.items.len}) catch "?";
+    try html.appendSlice(allocator, unstaged_count_str);
+    try html.appendSlice(allocator, ")</div>\n      <div class=\"file-list\">\n");
+
+    if (unstaged_files.items.len == 0) {
+        try html.appendSlice(allocator, "        <div class=\"no-changes\">No unstaged changes</div>\n");
+    } else {
+        for (unstaged_files.items) |item| {
+            const f = item.file;
+            const i = item.index;
             const badge = statusBadge(f.status);
             const is_untracked = f.status == .untracked;
             try html.appendSlice(allocator, "        <div class=\"file-item\" id=\"fi-");
@@ -237,11 +322,21 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
                 try appendEscaped(&html, allocator, op);
                 try html.appendSlice(allocator, "</div>\n");
             }
-            try html.appendSlice(allocator, "          </div>\n        </div>\n");
+            try html.appendSlice(allocator, "          </div>\n");
+            try html.appendSlice(allocator, "          <button class=\"stage-btn add\" onclick=\"event.stopPropagation(); stageFile('");
+            for (f.path) |c| {
+                switch (c) {
+                    '\\' => try html.appendSlice(allocator, "\\\\"),
+                    '\'' => try html.appendSlice(allocator, "\\'"),
+                    else => try html.append(allocator, c),
+                }
+            }
+            try html.appendSlice(allocator, "')\" title=\"Stage file\">+</button>\n");
+            try html.appendSlice(allocator, "        </div>\n");
         }
     }
 
-    try html.appendSlice(allocator, "      </div>\n"); // end file-list
+    try html.appendSlice(allocator, "      </div>\n");
 
     // Recent commits section
     try html.appendSlice(allocator,
@@ -349,6 +444,39 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\        .then(r => r.text())
         \\        .then(text => { body.innerHTML = renderDiff(text); })
         \\        .catch(err => { body.innerHTML = '<div class="no-changes">Error loading commit diff: ' + escHtml(err.message) + '</div>'; });
+        \\    }
+        \\    // Stage/Unstage operations
+        \\    function stageFile(filePath) {
+        \\      fetch('/__git__/stage?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\        method: 'POST'
+        \\      })
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          if (data.success) {
+        \\            location.reload();
+        \\          } else {
+        \\            alert('Failed to stage file');
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error staging file: ' + err.message);
+        \\        });
+        \\    }
+        \\    function unstageFile(filePath) {
+        \\      fetch('/__git__/unstage?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\        method: 'POST'
+        \\      })
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          if (data.success) {
+        \\            location.reload();
+        \\          } else {
+        \\            alert('Failed to unstage file');
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error unstaging file: ' + err.message);
+        \\        });
         \\    }
         \\    function renderCommits() {
         \\      const logContent = document.getElementById('logContent');

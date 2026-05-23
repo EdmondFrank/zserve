@@ -215,3 +215,25 @@ pub fn getCommitDiff(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, com
         return allocator.dupe(u8, "(no diff available)");
     };
 }
+
+/// Stage a file (git add)
+pub fn stageFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_path: []const u8) !void {
+    const result = runGit(io, allocator, root_dir, &[_][]const u8{
+        "add", "--", file_path,
+    }) catch |err| {
+        std.debug.print("Failed to stage file {s}: {s}\n", .{ file_path, @errorName(err) });
+        return err;
+    };
+    defer allocator.free(result);
+}
+
+/// Unstage a file (git reset HEAD)
+pub fn unstageFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_path: []const u8) !void {
+    const result = runGit(io, allocator, root_dir, &[_][]const u8{
+        "reset", "HEAD", "--", file_path,
+    }) catch |err| {
+        std.debug.print("Failed to unstage file {s}: {s}\n", .{ file_path, @errorName(err) });
+        return err;
+    };
+    defer allocator.free(result);
+}

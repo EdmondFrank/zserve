@@ -315,6 +315,128 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    // Handle git stage endpoint
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/stage")) {
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+        const file_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "file=")) |fi| {
+                const after = query[fi + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, "");
+        };
+        const root_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "root=")) |ri| {
+                const after = query[ri + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, ".");
+        };
+
+        const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
+            std.debug.print("Error decoding file path: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
+        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
+
+        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        const is_root = safe_root.len == 0 or std.mem.eql(u8, safe_root, ".");
+        const git_dir = if (is_root) ctx.root_dir else blk: {
+            const d = ctx.root_dir.openDir(ctx.io, safe_root, .{}) catch |err| {
+                std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_root, @errorName(err) });
+                try http.sendErrorResponse(ctx.stream, ctx.io, .not_found, "Directory not found");
+                return;
+            };
+            break :blk d;
+        };
+        defer if (!is_root) git_dir.close(ctx.io);
+
+        const git = @import("git.zig");
+        git.stageFile(ctx.io, arena.allocator(), git_dir, file_path) catch |err| {
+            std.debug.print("Error staging file: {s}\n", .{@errorName(err)});
+            http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to stage file") catch {};
+            return;
+        };
+
+        try http.sendResponseHeaders(ctx.stream, ctx.io, .ok, &[_]struct { []const u8, []const u8 }{
+            .{ "Content-Type", "application/json" },
+        });
+        var write_buf: [1024]u8 = undefined;
+        var stream_writer = ctx.stream.writer(ctx.io, &write_buf);
+        try stream_writer.interface.writeAll("{\"success\":true}");
+        try stream_writer.interface.flush();
+        return;
+    }
+
+    // Handle git unstage endpoint
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/unstage")) {
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+        const file_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "file=")) |fi| {
+                const after = query[fi + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, "");
+        };
+        const root_encoded = blk: {
+            if (std.mem.indexOf(u8, query, "root=")) |ri| {
+                const after = query[ri + 5 ..];
+                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
+                break :blk after[0..end];
+            }
+            break :blk @as([]const u8, ".");
+        };
+
+        const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
+            std.debug.print("Error decoding file path: {s}\n", .{@errorName(err)});
+            http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
+            return;
+        };
+        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
+        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
+
+        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+            http.sendNotFound(ctx.stream, ctx.io) catch {};
+            return;
+        }
+
+        const is_root = safe_root.len == 0 or std.mem.eql(u8, safe_root, ".");
+        const git_dir = if (is_root) ctx.root_dir else blk: {
+            const d = ctx.root_dir.openDir(ctx.io, safe_root, .{}) catch |err| {
+                std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_root, @errorName(err) });
+                try http.sendErrorResponse(ctx.stream, ctx.io, .not_found, "Directory not found");
+                return;
+            };
+            break :blk d;
+        };
+        defer if (!is_root) git_dir.close(ctx.io);
+
+        const git = @import("git.zig");
+        git.unstageFile(ctx.io, arena.allocator(), git_dir, file_path) catch |err| {
+            std.debug.print("Error unstaging file: {s}\n", .{@errorName(err)});
+            http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to unstage file") catch {};
+            return;
+        };
+
+        try http.sendResponseHeaders(ctx.stream, ctx.io, .ok, &[_]struct { []const u8, []const u8 }{
+            .{ "Content-Type", "application/json" },
+        });
+        var write_buf: [1024]u8 = undefined;
+        var stream_writer = ctx.stream.writer(ctx.io, &write_buf);
+        try stream_writer.interface.writeAll("{\"success\":true}");
+        try stream_writer.interface.flush();
+        return;
+    }
+
     // URL decode the path
     const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
         std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
