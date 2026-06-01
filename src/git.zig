@@ -237,3 +237,14 @@ pub fn unstageFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_
     };
     defer allocator.free(result);
 }
+
+/// Restore a file to HEAD state, discarding working-tree changes (git restore)
+pub fn restoreFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_path: []const u8) !void {
+    const result = runGit(io, allocator, root_dir, &[_][]const u8{
+        "restore", "--", file_path,
+    }) catch |err| {
+        std.debug.print("Failed to restore file {s}: {s}\n", .{ file_path, @errorName(err) });
+        return err;
+    };
+    defer allocator.free(result);
+}
