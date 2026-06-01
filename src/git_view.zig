@@ -142,6 +142,8 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .stage-btn.add:hover { background: #a3cfbb; }
         \\    .stage-btn.remove { background: #f8d7da; color: #58151c; }
         \\    .stage-btn.remove:hover { background: #f1aeb5; }
+        \\    .stage-btn.restore { background: #fff3cd; color: #856404; }
+        \\    .stage-btn.restore:hover { background: #ffc107; color: #000; }
         \\    .log-section { border-top: 1px solid var(--border); }
         \\    .log-toggle { width: 100%; padding: 8px 12px; background: var(--bg3); border: none; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between; align-items: center; }
         \\    .log-toggle:hover { background: var(--hover); }
@@ -329,6 +331,17 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
                 try html.appendSlice(allocator, "</div>\n");
             }
             try html.appendSlice(allocator, "          </div>\n");
+            if (!is_untracked) {
+                try html.appendSlice(allocator, "          <button class=\"stage-btn restore\" onclick=\"event.stopPropagation(); restoreFile('");
+                for (f.path) |c| {
+                    switch (c) {
+                        '\\' => try html.appendSlice(allocator, "\\\\"),
+                        '\'' => try html.appendSlice(allocator, "\\'"),
+                        else => try html.append(allocator, c),
+                    }
+                }
+                try html.appendSlice(allocator, "')\" title=\"Discard changes\">↩</button>\n");
+            }
             try html.appendSlice(allocator, "          <button class=\"stage-btn add\" onclick=\"event.stopPropagation(); stageFile('");
             for (f.path) |c| {
                 switch (c) {
@@ -490,6 +503,23 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\        })
         \\        .catch(err => {
         \\          alert('Error unstaging file: ' + err.message);
+        \\        });
+        \\    }
+        \\    function restoreFile(filePath) {
+        \\      if (!confirm('Discard all changes to "' + filePath + '"?\n\nThis cannot be undone.')) return;
+        \\      fetch('/__git__/restore?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\        method: 'POST'
+        \\      })
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          if (data.success) {
+        \\            location.reload();
+        \\          } else {
+        \\            alert('Failed to restore file: ' + filePath);
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          alert('Error restoring file: ' + err.message);
         \\        });
         \\    }
         \\    function renderCommits() {
