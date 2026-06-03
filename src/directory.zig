@@ -496,14 +496,33 @@ pub fn listDirectory(
 
     const title = if (dir_path.len == 0) "/" else dir_path;
     try stream_writer.interface.writeAll(title);
-    // Conditionally show git button if the currently browsed directory is a git repo
-    if (git.isGitRepo(io, dir)) {
-        // Encode dir_path for use in the URL query param
-        const encoded_git_path = url.encode(allocator, dir_path) catch dir_path;
-        defer if (encoded_git_path.ptr != dir_path.ptr) allocator.free(encoded_git_path);
-        try stream_writer.interface.writeAll("  <button id=\"gitToggle\" class=\"git-toggle\" onclick=\"window.location.href='/__git__?path=");
-        try stream_writer.interface.writeAll(encoded_git_path);
-        try stream_writer.interface.writeAll("'\">🌿 Git</button>\n");
+    // Conditionally show git button — walk up parent dirs to find a git repo
+    if (git.findGitRoot(io, allocator, dir)) |git_root| {
+        defer if (git_root.levels_up > 0) git_root.dir.close(io);
+        defer allocator.free(git_root.abs_path);
+
+        // Determine if the git root is within root_dir or above it
+        const root_real = git.getDirRealPath(io, allocator, root_dir) catch git_root.abs_path;
+        defer if (root_real.ptr != git_root.abs_path.ptr) allocator.free(root_real);
+
+        const git_is_above_root = git_root.abs_path.len < root_real.len and
+            std.mem.startsWith(u8, root_real, git_root.abs_path);
+
+        if (git_is_above_root) {
+            // Git root is above root_dir — pass absolute path
+            const encoded_abs = url.encode(allocator, git_root.abs_path) catch git_root.abs_path;
+            defer if (encoded_abs.ptr != git_root.abs_path.ptr) allocator.free(encoded_abs);
+            try stream_writer.interface.writeAll("  <button id=\"gitToggle\" class=\"git-toggle\" onclick=\"window.location.href='/__git__?git_root_abs=");
+            try stream_writer.interface.writeAll(encoded_abs);
+            try stream_writer.interface.writeAll("'\">🌿 Git</button>\n");
+        } else {
+            // Git root is within root_dir — use the existing path= parameter
+            const encoded_git_path = url.encode(allocator, dir_path) catch dir_path;
+            defer if (encoded_git_path.ptr != dir_path.ptr) allocator.free(encoded_git_path);
+            try stream_writer.interface.writeAll("  <button id=\"gitToggle\" class=\"git-toggle\" onclick=\"window.location.href='/__git__?path=");
+            try stream_writer.interface.writeAll(encoded_git_path);
+            try stream_writer.interface.writeAll("'\">🌿 Git</button>\n");
+        }
     }
 
     try stream_writer.interface.writeAll("</h1>\n");

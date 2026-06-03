@@ -30,19 +30,12 @@ fn statusBadge(status: git.FileStatus) struct { label: []const u8, class: []cons
     };
 }
 
-/// Serve the full git view HTML page
-pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, root_dir: Io.Dir, dir_path: []const u8) !void {
-    // Open the target directory (may be a subdirectory of root_dir)
+/// Serve the full git view HTML page.
+/// `git_dir` is the resolved git root directory (already opened by caller).
+/// `dir_path` is used for the back-link URL only.
+/// `git_root_abs` is the absolute path when the git root is above root_dir (for JS AJAX calls).
+pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, git_dir: Io.Dir, dir_path: []const u8, git_root_abs: ?[]const u8) !void {
     const is_root = dir_path.len == 0 or std.mem.eql(u8, dir_path, ".");
-    const git_dir = if (is_root) root_dir else blk: {
-        const d = root_dir.openDir(io, dir_path, .{}) catch |err| {
-            std.debug.print("Failed to open git dir {s}: {s}\n", .{ dir_path, @errorName(err) });
-            try http.sendErrorResponse(stream, io, .not_found, "Directory not found");
-            return;
-        };
-        break :blk d;
-    };
-    defer if (!is_root) git_dir.close(io);
 
     var status = git.getGitStatus(io, allocator, git_dir) catch |err| {
         std.debug.print("Failed to get git status: {s}\n", .{@errorName(err)});
@@ -401,6 +394,24 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
     }
     try html.appendSlice(allocator,
         \\';
+        \\    const GIT_ROOT_ABS = '
+    );
+    // Inject git_root_abs if present, otherwise empty string
+    if (git_root_abs) |abs| {
+        for (abs) |c| {
+            switch (c) {
+                '\\' => try html.appendSlice(allocator, "\\\\"),
+                '\'' => try html.appendSlice(allocator, "\\'"),
+                else => try html.append(allocator, c),
+            }
+        }
+    }
+    try html.appendSlice(allocator,
+        \\';
+        \\    function gitRootParam() {
+        \\      if (GIT_ROOT_ABS) return '&git_root_abs=' + encodeURIComponent(GIT_ROOT_ABS);
+        \\      return '&root=' + encodeURIComponent(GIT_ROOT);
+        \\    }
         \\    // Theme
         \\    function initTheme() {
         \\      const saved = localStorage.getItem('theme');
@@ -449,7 +460,7 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\      const body = document.getElementById('diffBody');
         \\      header.innerHTML = '<span class="diff-filename">' + escHtml(filePath) + '</span>';
         \\      body.innerHTML = '<div class="diff-loading"><div class="spinner"></div>Loading diff...</div>';
-        \\      fetch('/__git__/diff?file=' + encodeURIComponent(filePath) + '&untracked=' + (isUntracked ? '1' : '0') + '&root=' + encodeURIComponent(GIT_ROOT))
+        \\      fetch('/__git__/diff?file=' + encodeURIComponent(filePath) + '&untracked=' + (isUntracked ? '1' : '0') + gitRootParam())
         \\        .then(r => r.text())
         \\        .then(text => { body.innerHTML = renderDiff(text); })
         \\        .catch(err => { body.innerHTML = '<div class="no-changes">Error loading diff: ' + escHtml(err.message) + '</div>'; });
@@ -467,14 +478,14 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\      const body = document.getElementById('diffBody');
         \\      header.innerHTML = '<span class="diff-filename">Commit: ' + escHtml(hash) + '</span>';
         \\      body.innerHTML = '<div class="diff-loading"><div class="spinner"></div>Loading commit diff...</div>';
-        \\      fetch('/__git__/commit-diff?hash=' + encodeURIComponent(hash) + '&root=' + encodeURIComponent(GIT_ROOT))
+        \\      fetch('/__git__/commit-diff?hash=' + encodeURIComponent(hash) + gitRootParam())
         \\        .then(r => r.text())
         \\        .then(text => { body.innerHTML = renderDiff(text); })
         \\        .catch(err => { body.innerHTML = '<div class="no-changes">Error loading commit diff: ' + escHtml(err.message) + '</div>'; });
         \\    }
         \\    // Stage/Unstage operations
         \\    function stageFile(filePath) {
-        \\      fetch('/__git__/stage?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\      fetch('/__git__/stage?file=' + encodeURIComponent(filePath) + gitRootParam(), {
         \\        method: 'POST'
         \\      })
         \\        .then(r => r.json())
@@ -490,7 +501,7 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\        });
         \\    }
         \\    function unstageFile(filePath) {
-        \\      fetch('/__git__/unstage?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\      fetch('/__git__/unstage?file=' + encodeURIComponent(filePath) + gitRootParam(), {
         \\        method: 'POST'
         \\      })
         \\        .then(r => r.json())
@@ -507,7 +518,7 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    }
         \\    function restoreFile(filePath) {
         \\      if (!confirm('Discard all changes to "' + filePath + '"?\n\nThis cannot be undone.')) return;
-        \\      fetch('/__git__/restore?file=' + encodeURIComponent(filePath) + '&root=' + encodeURIComponent(GIT_ROOT), {
+        \\      fetch('/__git__/restore?file=' + encodeURIComponent(filePath) + gitRootParam(), {
         \\        method: 'POST'
         \\      })
         \\        .then(r => r.json())
@@ -585,20 +596,9 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
     try w.flush();
 }
 
-/// Serve the diff for a single file as plain text (for AJAX)
-pub fn serveGitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, root_dir: Io.Dir, dir_path: []const u8, file_path: []const u8, is_untracked: bool) !void {
-    // Open the target git directory (may be a subdirectory of root_dir)
-    const is_root = dir_path.len == 0 or std.mem.eql(u8, dir_path, ".");
-    const git_dir = if (is_root) root_dir else blk: {
-        const d = root_dir.openDir(io, dir_path, .{}) catch |err| {
-            std.debug.print("Failed to open git dir {s}: {s}\n", .{ dir_path, @errorName(err) });
-            try http.sendErrorResponse(stream, io, .not_found, "Directory not found");
-            return;
-        };
-        break :blk d;
-    };
-    defer if (!is_root) git_dir.close(io);
-
+/// Serve the diff for a single file as plain text (for AJAX).
+/// `git_dir` is the resolved git root directory (already opened by caller).
+pub fn serveGitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, git_dir: Io.Dir, file_path: []const u8, is_untracked: bool) !void {
     const diff = git.getFileDiff(io, allocator, git_dir, file_path, is_untracked) catch |err| {
         std.debug.print("Failed to get diff for {s}: {s}\n", .{ file_path, @errorName(err) });
         try http.sendErrorResponse(stream, io, .internal_server_error, "Failed to get diff");
@@ -616,20 +616,9 @@ pub fn serveGitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
     try stream_writer.interface.flush();
 }
 
-/// Serve the diff for a specific commit as plain text (for AJAX)
-pub fn serveCommitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, root_dir: Io.Dir, dir_path: []const u8, commit_hash: []const u8) !void {
-    // Open the target git directory (may be a subdirectory of root_dir)
-    const is_root = dir_path.len == 0 or std.mem.eql(u8, dir_path, ".");
-    const git_dir = if (is_root) root_dir else blk: {
-        const d = root_dir.openDir(io, dir_path, .{}) catch |err| {
-            std.debug.print("Failed to open git dir {s}: {s}\n", .{ dir_path, @errorName(err) });
-            try http.sendErrorResponse(stream, io, .not_found, "Directory not found");
-            return;
-        };
-        break :blk d;
-    };
-    defer if (!is_root) git_dir.close(io);
-
+/// Serve the diff for a specific commit as plain text (for AJAX).
+/// `git_dir` is the resolved git root directory (already opened by caller).
+pub fn serveCommitDiff(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream, git_dir: Io.Dir, commit_hash: []const u8) !void {
     const diff = git.getCommitDiff(io, allocator, git_dir, commit_hash) catch |err| {
         std.debug.print("Failed to get commit diff for {s}: {s}\n", .{ commit_hash, @errorName(err) });
         try http.sendErrorResponse(stream, io, .internal_server_error, "Failed to get commit diff");

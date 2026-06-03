@@ -40,8 +40,61 @@ pub fn isGitRepo(io: Io, dir: Io.Dir) bool {
     return true;
 }
 
+/// Result of finding a git root directory
+pub const GitRoot = struct {
+    /// Handle to the git root directory. Caller must close if `levels_up > 0`.
+    dir: Io.Dir,
+    /// Absolute path to the git root (caller owns, must free with allocator).
+    abs_path: []const u8,
+    /// How many levels above the input directory the git root was found.
+    levels_up: u32,
+};
+
+/// Walk up parent directories to find the nearest git repository.
+/// Returns a GitRoot if found within 20 levels, null otherwise.
+/// Caller owns `abs_path` (free with the provided allocator) and must close `dir` if `levels_up > 0`.
+pub fn findGitRoot(io: Io, allocator: std.mem.Allocator, dir: Io.Dir) ?GitRoot {
+    // First check the current directory
+    if (isGitRepo(io, dir)) {
+        const abs = getDirRealPath(io, allocator, dir) catch return null;
+        return .{
+            .dir = dir,
+            .abs_path = abs,
+            .levels_up = 0,
+        };
+    }
+
+    // Walk up parent directories
+    var current = dir;
+    var prev: ?Io.Dir = null;
+    var levels: u32 = 0;
+    while (levels < 20) : (levels += 1) {
+        const parent = current.openDir(io, "..", .{}) catch return null;
+        // Close the previous intermediate dir (but never the original `dir`)
+        if (prev) |p| p.close(io);
+        prev = parent;
+
+        if (isGitRepo(io, parent)) {
+            const abs = getDirRealPath(io, allocator, parent) catch {
+                parent.close(io);
+                return null;
+            };
+            return .{
+                .dir = parent,
+                .abs_path = abs,
+                .levels_up = levels + 1,
+            };
+        }
+        current = parent;
+    }
+
+    // Exceeded max depth — clean up
+    if (prev) |p| p.close(io);
+    return null;
+}
+
 /// Get the real path of a directory (cross-platform: macOS + Linux)
-fn getDirRealPath(io: Io, allocator: std.mem.Allocator, dir: Io.Dir) ![]const u8 {
+pub fn getDirRealPath(io: Io, allocator: std.mem.Allocator, dir: Io.Dir) ![]const u8 {
     const native_os = @import("builtin").os.tag;
     if (native_os == .macos) {
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -247,4 +300,46 @@ pub fn restoreFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_
         return err;
     };
     defer allocator.free(result);
+}
+
+/// Open a directory by navigating up from `from_dir` using `..` segments.
+/// `target_abs_path` must be an ancestor of `from_dir` (or equal to it).
+/// Returns the opened dir. Caller must close it if levels_up > 0.
+pub fn openDirAbove(io: Io, allocator: std.mem.Allocator, from_dir: Io.Dir, target_abs_path: []const u8) !Io.Dir {
+    const from_path = try getDirRealPath(io, allocator, from_dir);
+    defer allocator.free(from_path);
+
+    // Verify target is a prefix of from_path
+    if (target_abs_path.len > from_path.len) return error.NotAncestor;
+    if (!std.mem.startsWith(u8, from_path, target_abs_path)) return error.NotAncestor;
+
+    // Handle exact match
+    if (target_abs_path.len == from_path.len) return from_dir;
+
+    // The character after the prefix must be '/'
+    if (from_path[target_abs_path.len] != '/') return error.NotAncestor;
+
+    // Count the number of '/' separators in the suffix to determine levels
+    const suffix = from_path[target_abs_path.len + 1 ..];
+    var levels: u32 = 1; // at least 1 level up (the segment after the trailing /)
+    for (suffix) |c| {
+        if (c == '/') levels += 1;
+    }
+
+    // Build the relative path with `..` segments
+    // Max 20 levels as safety limit
+    if (levels > 20) return error.TooDeep;
+
+    // Navigate up by opening ".." repeatedly
+    var current = from_dir;
+    var prev: ?Io.Dir = null;
+    var i: u32 = 0;
+    while (i < levels) : (i += 1) {
+        const parent = current.openDir(io, "..", .{}) catch return error.OpenFailed;
+        if (prev) |p| p.close(io);
+        prev = parent;
+        current = parent;
+    }
+    // `prev` now holds the git root dir (don't close it — caller owns it)
+    return current;
 }

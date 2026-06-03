@@ -14,6 +14,7 @@ const tail = @import("tail.zig");
 const truncate_file = @import("truncate.zig");
 const execute = @import("execute.zig");
 const git_view = @import("git_view.zig");
+const git = @import("git.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
@@ -205,56 +206,37 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     if (std.mem.eql(u8, request.path, "/__git__") or std.mem.eql(u8, request.path, "/__git__/") or
         std.mem.startsWith(u8, request.path, "/__git__?"))
     {
-        // Extract optional ?path= query param (the subdirectory that is the git repo)
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const git_path_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "path=")) |pi| {
-                const after = query[pi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
+
+        // For the git view, we need the dir_path relative to root_dir (for the back link)
+        // When git root is above root_dir, use "." since the view is at root level
+        const git_root_abs_val: ?[]const u8 = if (extractQueryParam(query, "git_root_abs")) |encoded|
+            url.decode(arena.allocator(), encoded) catch null
+        else
+            null;
+        const has_abs = git_root_abs_val != null;
+        const dir_path: []const u8 = if (has_abs) "." else blk: {
+            const encoded = extractQueryParam(query, "path") orelse ".";
+            break :blk url.decode(arena.allocator(), encoded) catch ".";
         };
-        const git_path = url.decode(arena.allocator(), git_path_encoded) catch ".";
-        // Sanitize: strip leading slash, reject traversal
-        const safe_git_path = if (std.mem.startsWith(u8, git_path, "/")) git_path[1..] else git_path;
-        if (url.hasTraversal(safe_git_path)) {
+        const safe_git_path = if (std.mem.startsWith(u8, dir_path, "/")) dir_path[1..] else dir_path;
+        if (!has_abs and url.hasTraversal(safe_git_path)) {
             http.sendNotFound(ctx.stream, ctx.io) catch {};
             return;
         }
-        git_view.serveGitView(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_git_path) catch |err| {
+
+        git_view.serveGitView(ctx.io, arena.allocator(), ctx.stream, resolved.dir, safe_git_path, git_root_abs_val) catch |err| {
             std.debug.print("Error serving git view: {s}\n", .{@errorName(err)});
         };
         return;
     }
 
     if (std.mem.startsWith(u8, request.path, "/__git__/diff")) {
-        // Extract file, untracked, and root params from query string
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const file_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "file=")) |fi| {
-                const after = query[fi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "");
-        };
-        const untracked_str = blk: {
-            if (std.mem.indexOf(u8, query, "untracked=")) |ui| {
-                const after = query[ui + 10 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "0");
-        };
-        const root_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "root=")) |ri| {
-                const after = query[ri + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
-        };
+        const file_encoded = extractQueryParam(query, "file") orelse "";
+        const untracked_str = extractQueryParam(query, "untracked") orelse "0";
         const is_untracked = std.mem.eql(u8, untracked_str, "1");
 
         const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
@@ -262,54 +244,35 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
             return;
         };
-        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
-        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
 
-        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+        if (url.hasTraversal(file_path)) {
             http.sendNotFound(ctx.stream, ctx.io) catch {};
             return;
         }
 
-        git_view.serveGitDiff(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_root, file_path, is_untracked) catch |err| {
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
+
+        git_view.serveGitDiff(ctx.io, arena.allocator(), ctx.stream, resolved.dir, file_path, is_untracked) catch |err| {
             std.debug.print("Error serving git diff: {s}\n", .{@errorName(err)});
         };
         return;
     }
 
     if (std.mem.startsWith(u8, request.path, "/__git__/commit-diff")) {
-        // Extract hash and root params from query string
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const hash_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "hash=")) |hi| {
-                const after = query[hi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "");
-        };
-        const root_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "root=")) |ri| {
-                const after = query[ri + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
-        };
+        const hash_encoded = extractQueryParam(query, "hash") orelse "";
 
         const commit_hash = url.decode(arena.allocator(), hash_encoded) catch |err| {
             std.debug.print("Error decoding commit hash: {s}\n", .{@errorName(err)});
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
             return;
         };
-        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
-        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
 
-        if (url.hasTraversal(safe_root)) {
-            http.sendNotFound(ctx.stream, ctx.io) catch {};
-            return;
-        }
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
 
-        git_view.serveCommitDiff(ctx.io, arena.allocator(), ctx.stream, ctx.root_dir, safe_root, commit_hash) catch |err| {
+        git_view.serveCommitDiff(ctx.io, arena.allocator(), ctx.stream, resolved.dir, commit_hash) catch |err| {
             std.debug.print("Error serving commit diff: {s}\n", .{@errorName(err)});
         };
         return;
@@ -318,49 +281,23 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Handle git stage endpoint
     if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/stage")) {
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const file_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "file=")) |fi| {
-                const after = query[fi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "");
-        };
-        const root_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "root=")) |ri| {
-                const after = query[ri + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
-        };
+        const file_encoded = extractQueryParam(query, "file") orelse "";
 
         const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
             std.debug.print("Error decoding file path: {s}\n", .{@errorName(err)});
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
             return;
         };
-        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
-        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
 
-        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+        if (url.hasTraversal(file_path)) {
             http.sendNotFound(ctx.stream, ctx.io) catch {};
             return;
         }
 
-        const is_root = safe_root.len == 0 or std.mem.eql(u8, safe_root, ".");
-        const git_dir = if (is_root) ctx.root_dir else blk: {
-            const d = ctx.root_dir.openDir(ctx.io, safe_root, .{}) catch |err| {
-                std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_root, @errorName(err) });
-                try http.sendErrorResponse(ctx.stream, ctx.io, .not_found, "Directory not found");
-                return;
-            };
-            break :blk d;
-        };
-        defer if (!is_root) git_dir.close(ctx.io);
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
 
-        const git = @import("git.zig");
-        git.stageFile(ctx.io, arena.allocator(), git_dir, file_path) catch |err| {
+        git.stageFile(ctx.io, arena.allocator(), resolved.dir, file_path) catch |err| {
             std.debug.print("Error staging file: {s}\n", .{@errorName(err)});
             http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to stage file") catch {};
             return;
@@ -379,49 +316,23 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Handle git unstage endpoint
     if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/unstage")) {
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const file_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "file=")) |fi| {
-                const after = query[fi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "");
-        };
-        const root_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "root=")) |ri| {
-                const after = query[ri + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
-        };
+        const file_encoded = extractQueryParam(query, "file") orelse "";
 
         const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
             std.debug.print("Error decoding file path: {s}\n", .{@errorName(err)});
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
             return;
         };
-        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
-        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
 
-        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+        if (url.hasTraversal(file_path)) {
             http.sendNotFound(ctx.stream, ctx.io) catch {};
             return;
         }
 
-        const is_root = safe_root.len == 0 or std.mem.eql(u8, safe_root, ".");
-        const git_dir = if (is_root) ctx.root_dir else blk: {
-            const d = ctx.root_dir.openDir(ctx.io, safe_root, .{}) catch |err| {
-                std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_root, @errorName(err) });
-                try http.sendErrorResponse(ctx.stream, ctx.io, .not_found, "Directory not found");
-                return;
-            };
-            break :blk d;
-        };
-        defer if (!is_root) git_dir.close(ctx.io);
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
 
-        const git = @import("git.zig");
-        git.unstageFile(ctx.io, arena.allocator(), git_dir, file_path) catch |err| {
+        git.unstageFile(ctx.io, arena.allocator(), resolved.dir, file_path) catch |err| {
             std.debug.print("Error unstaging file: {s}\n", .{@errorName(err)});
             http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to unstage file") catch {};
             return;
@@ -440,49 +351,23 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Handle git restore endpoint (discard working-tree changes)
     if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/restore")) {
         const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
-        const file_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "file=")) |fi| {
-                const after = query[fi + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, "");
-        };
-        const root_encoded = blk: {
-            if (std.mem.indexOf(u8, query, "root=")) |ri| {
-                const after = query[ri + 5 ..];
-                const end = std.mem.indexOf(u8, after, "&") orelse after.len;
-                break :blk after[0..end];
-            }
-            break :blk @as([]const u8, ".");
-        };
+        const file_encoded = extractQueryParam(query, "file") orelse "";
 
         const file_path = url.decode(arena.allocator(), file_encoded) catch |err| {
             std.debug.print("Error decoding file path: {s}\n", .{@errorName(err)});
             http.sendBadRequest(ctx.stream, ctx.io, "Invalid URL encoding") catch {};
             return;
         };
-        const root_path = url.decode(arena.allocator(), root_encoded) catch ".";
-        const safe_root = if (std.mem.startsWith(u8, root_path, "/")) root_path[1..] else root_path;
 
-        if (url.hasTraversal(file_path) or url.hasTraversal(safe_root)) {
+        if (url.hasTraversal(file_path)) {
             http.sendNotFound(ctx.stream, ctx.io) catch {};
             return;
         }
 
-        const is_root = safe_root.len == 0 or std.mem.eql(u8, safe_root, ".");
-        const git_dir = if (is_root) ctx.root_dir else blk: {
-            const d = ctx.root_dir.openDir(ctx.io, safe_root, .{}) catch |err| {
-                std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_root, @errorName(err) });
-                try http.sendErrorResponse(ctx.stream, ctx.io, .not_found, "Directory not found");
-                return;
-            };
-            break :blk d;
-        };
-        defer if (!is_root) git_dir.close(ctx.io);
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
 
-        const git = @import("git.zig");
-        git.restoreFile(ctx.io, arena.allocator(), git_dir, file_path) catch |err| {
+        git.restoreFile(ctx.io, arena.allocator(), resolved.dir, file_path) catch |err| {
             std.debug.print("Error restoring file: {s}\n", .{@errorName(err)});
             http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to restore file") catch {};
             return;
@@ -614,4 +499,72 @@ fn findBodyStart(data: []const u8) ?usize {
         return idx + 2;
     }
     return null;
+}
+
+/// Extract a query parameter value from a query string.
+/// Returns the raw (still-encoded) value, or null if not found.
+fn extractQueryParam(query: []const u8, key: []const u8) ?[]const u8 {
+    // Build "key=" to search for
+    var key_buf: [64]u8 = undefined;
+    if (key.len + 1 > key_buf.len) return null;
+    @memcpy(key_buf[0..key.len], key);
+    key_buf[key.len] = '=';
+
+    const needle = key_buf[0 .. key.len + 1];
+
+    // Try to find "key=" preceded by '&' or at start
+    if (std.mem.indexOf(u8, query, needle)) |idx| {
+        if (idx == 0 or query[idx - 1] == '&') {
+            const val_start = idx + needle.len;
+            const val_end = std.mem.indexOf(u8, query[val_start..], "&") orelse (query.len - val_start);
+            return query[val_start..][0..val_end];
+        }
+    }
+    return null;
+}
+
+/// Resolved git directory handle with cleanup info.
+const ResolvedGitDir = struct {
+    dir: Io.Dir,
+    must_close: bool,
+};
+
+/// Resolve the git directory from request parameters.
+/// Checks for `git_root_abs` (absolute path to parent git root) first,
+/// then falls back to `root` or `path` parameter (relative to root_dir).
+fn resolveGitDir(
+    io: Io,
+    allocator: std.mem.Allocator,
+    root_dir: Io.Dir,
+    query: []const u8,
+) ResolvedGitDir {
+    // Priority 1: absolute git root path (for git repos above root_dir)
+    if (extractQueryParam(query, "git_root_abs")) |abs_encoded| {
+        const abs_path = url.decode(allocator, abs_encoded) catch return .{ .dir = root_dir, .must_close = false };
+        // Don't free abs_path — it lives in the arena allocator
+        if (git.openDirAbove(io, allocator, root_dir, abs_path)) |dir| {
+            return .{ .dir = dir, .must_close = true };
+        } else |_| {
+            std.debug.print("Failed to open git root at: {s}\n", .{abs_path});
+            return .{ .dir = root_dir, .must_close = false };
+        }
+    }
+
+    // Priority 2: relative path (root= or path= parameter)
+    const rel_encoded = extractQueryParam(query, "root") orelse extractQueryParam(query, "path") orelse ".";
+    const rel_path = url.decode(allocator, rel_encoded) catch ".";
+    const safe_path = if (std.mem.startsWith(u8, rel_path, "/")) rel_path[1..] else rel_path;
+
+    if (url.hasTraversal(safe_path)) {
+        return .{ .dir = root_dir, .must_close = false };
+    }
+
+    const is_root = safe_path.len == 0 or std.mem.eql(u8, safe_path, ".");
+    if (is_root) return .{ .dir = root_dir, .must_close = false };
+
+    const dir = root_dir.openDir(io, safe_path, .{}) catch |err| {
+        std.debug.print("Failed to open git dir {s}: {s}\n", .{ safe_path, @errorName(err) });
+        return .{ .dir = root_dir, .must_close = false };
+    };
+    return .{ .dir = dir, .must_close = true };
 }
