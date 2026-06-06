@@ -137,6 +137,28 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .stage-btn.remove:hover { background: #f1aeb5; }
         \\    .stage-btn.restore { background: #fff3cd; color: #856404; }
         \\    .stage-btn.restore:hover { background: #ffc107; color: #000; }
+        \\    .commit-section { border-top: 1px solid var(--border); padding: 0.75em 1em; background: var(--bg2); }
+        \\    .commit-section-title { font-weight: 600; font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        \\    .commit-textarea { width: 100%; min-height: 60px; max-height: 120px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: inherit; font-size: 13px; resize: vertical; margin-bottom: 8px; }
+        \\    .commit-textarea:focus { outline: none; border-color: var(--link); box-shadow: 0 0 0 2px rgba(9,105,218,0.15); }
+        \\    .commit-textarea::placeholder { color: var(--text2); }
+        \\    .commit-btn { width: 100%; padding: 8px 16px; background: #2d6a4f; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        \\    .commit-btn:hover { background: #1b4332; }
+        \\    .commit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        \\    .commit-feedback { font-size: 12px; margin-top: 8px; padding: 6px 8px; border-radius: 4px; display: none; }
+        \\    .commit-feedback.success { display: block; background: var(--add-bg); color: var(--add-text); }
+        \\    .commit-feedback.error { display: block; background: var(--del-bg); color: var(--del-text); }
+        \\    .push-section { border-top: 1px solid var(--border); padding: 0.75em 1em; background: var(--bg2); }
+        \\    .push-section-title { font-weight: 600; font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        \\    .push-row { display: flex; gap: 8px; align-items: center; }
+        \\    .push-select { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
+        \\    .push-select:focus { outline: none; border-color: var(--link); }
+        \\    .push-btn { padding: 6px 16px; background: #0969da; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, opacity 0.2s; white-space: nowrap; }
+        \\    .push-btn:hover { background: #0550ae; }
+        \\    .push-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        \\    .push-feedback { font-size: 12px; margin-top: 8px; padding: 6px 8px; border-radius: 4px; display: none; }
+        \\    .push-feedback.success { display: block; background: var(--add-bg); color: var(--add-text); }
+        \\    .push-feedback.error { display: block; background: var(--del-bg); color: var(--del-text); }
         \\    .log-section { border-top: 1px solid var(--border); }
         \\    .log-toggle { width: 100%; padding: 8px 12px; background: var(--bg3); border: none; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between; align-items: center; }
         \\    .log-toggle:hover { background: var(--hover); }
@@ -351,6 +373,34 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
 
     try html.appendSlice(allocator, "      </div>\n");
 
+    // Commit section
+    try html.appendSlice(allocator,
+        \\      <div class="commit-section">
+        \\        <div class="commit-section-title">📝 Commit</div>
+        \\        <textarea class="commit-textarea" id="commitMessage" placeholder="Commit message..." rows="3"></textarea>
+        \\        <button class="commit-btn" id="commitBtn" onclick="commitStaged()" disabled>
+        \\          Commit Staged
+        \\        </button>
+        \\        <div class="commit-feedback" id="commitFeedback"></div>
+        \\      </div>
+    );
+
+    // Push section
+    try html.appendSlice(allocator,
+        \\      <div class="push-section">
+        \\        <div class="push-section-title">🚀 Push</div>
+        \\        <div class="push-row">
+        \\          <select class="push-select" id="remoteSelect">
+        \\            <option value="">Loading remotes...</option>
+        \\          </select>
+        \\          <button class="push-btn" id="pushBtn" onclick="pushToRemote()" disabled>
+        \\            Push
+        \\          </button>
+        \\        </div>
+        \\        <div class="push-feedback" id="pushFeedback"></div>
+        \\      </div>
+    );
+
     // Recent commits section
     try html.appendSlice(allocator,
         \\      <div class="log-section">
@@ -404,6 +454,18 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
                 '\'' => try html.appendSlice(allocator, "\\'"),
                 else => try html.append(allocator, c),
             }
+        }
+    }
+    try html.appendSlice(allocator,
+        \\';
+        \\    const BRANCH_NAME = '
+    );
+    // Inject the branch name as a JS string literal
+    for (status.branch) |c| {
+        switch (c) {
+            '\\' => try html.appendSlice(allocator, "\\\\"),
+            '\'' => try html.appendSlice(allocator, "\\'"),
+            else => try html.append(allocator, c),
         }
     }
     try html.appendSlice(allocator,
@@ -533,6 +595,120 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\          alert('Error restoring file: ' + err.message);
         \\        });
         \\    }
+        \\    // Commit operation
+        \\    function commitStaged() {
+        \\      const messageEl = document.getElementById('commitMessage');
+        \\      const btnEl = document.getElementById('commitBtn');
+        \\      const feedbackEl = document.getElementById('commitFeedback');
+        \\      const message = messageEl.value.trim();
+        \\      if (!message) {
+        \\        feedbackEl.className = 'commit-feedback error';
+        \\        feedbackEl.textContent = 'Please enter a commit message';
+        \\        return;
+        \\      }
+        \\      btnEl.disabled = true;
+        \\      btnEl.textContent = 'Committing...';
+        \\      feedbackEl.className = 'commit-feedback';
+        \\      feedbackEl.style.display = 'none';
+        \\      fetch('/__git__/commit' + gitRootParam(), {
+        \\        method: 'POST',
+        \\        headers: { 'Content-Type': 'application/json' },
+        \\        body: JSON.stringify({ message: message })
+        \\      })
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          if (data.success) {
+        \\            feedbackEl.className = 'commit-feedback success';
+        \\            feedbackEl.textContent = 'Commit successful!';
+        \\            messageEl.value = '';
+        \\            setTimeout(() => location.reload(), 1000);
+        \\          } else {
+        \\            feedbackEl.className = 'commit-feedback error';
+        \\            feedbackEl.textContent = 'Commit failed: ' + (data.error || 'Unknown error');
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          feedbackEl.className = 'commit-feedback error';
+        \\          feedbackEl.textContent = 'Error: ' + err.message;
+        \\        })
+        \\        .finally(() => {
+        \\          btnEl.disabled = false;
+        \\          btnEl.textContent = 'Commit Staged';
+        \\        });
+        \\    }
+        \\    // Push operation
+        \\    function pushToRemote() {
+        \\      const selectEl = document.getElementById('remoteSelect');
+        \\      const btnEl = document.getElementById('pushBtn');
+        \\      const feedbackEl = document.getElementById('pushFeedback');
+        \\      const remote = selectEl.value;
+        \\      if (!remote) {
+        \\        feedbackEl.className = 'push-feedback error';
+        \\        feedbackEl.textContent = 'Please select a remote';
+        \\        return;
+        \\      }
+        \\      btnEl.disabled = true;
+        \\      btnEl.textContent = 'Pushing...';
+        \\      feedbackEl.className = 'push-feedback';
+        \\      feedbackEl.style.display = 'none';
+        \\      fetch('/__git__/push' + gitRootParam(), {
+        \\        method: 'POST',
+        \\        headers: { 'Content-Type': 'application/json' },
+        \\        body: JSON.stringify({ remote: remote, branch: BRANCH_NAME })
+        \\      })
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          if (data.success) {
+        \\            feedbackEl.className = 'push-feedback success';
+        \\            feedbackEl.textContent = 'Push successful!';
+        \\          } else {
+        \\            feedbackEl.className = 'push-feedback error';
+        \\            feedbackEl.textContent = 'Push failed: ' + (data.error || 'Unknown error');
+        \\          }
+        \\        })
+        \\        .catch(err => {
+        \\          feedbackEl.className = 'push-feedback error';
+        \\          feedbackEl.textContent = 'Error: ' + err.message;
+        \\        })
+        \\        .finally(() => {
+        \\          btnEl.disabled = false;
+        \\          btnEl.textContent = 'Push';
+        \\        });
+        \\    }
+        \\    // Load remotes on page load
+        \\    function loadRemotes() {
+        \\      fetch('/__git__/remotes' + gitRootParam())
+        \\        .then(r => r.json())
+        \\        .then(data => {
+        \\          const selectEl = document.getElementById('remoteSelect');
+        \\          selectEl.innerHTML = '';
+        \\          if (data.remotes && data.remotes.length > 0) {
+        \\            for (const remote of data.remotes) {
+        \\              const opt = document.createElement('option');
+        \\              opt.value = remote;
+        \\              opt.textContent = remote;
+        \\              if (remote === 'origin') opt.selected = true;
+        \\              selectEl.appendChild(opt);
+        \\            }
+        \\            document.getElementById('pushBtn').disabled = false;
+        \\          } else {
+        \\            const opt = document.createElement('option');
+        \\            opt.value = '';
+        \\            opt.textContent = 'No remotes found';
+        \\            selectEl.appendChild(opt);
+        \\          }
+        \\        })
+        \\        .catch(() => {
+        \\          const selectEl = document.getElementById('remoteSelect');
+        \\          selectEl.innerHTML = '<option value="">Error loading remotes</option>';
+        \\        });
+        \\    }
+        \\    // Update commit button state based on staged files
+        \\    function updateCommitState() {
+        \\      const hasStaged = document.querySelectorAll('#stagedFiles .file-item').length > 0;
+        \\      const commitBtn = document.getElementById('commitBtn');
+        \\      if (commitBtn) commitBtn.disabled = !hasStaged;
+        \\    }
         \\    function renderCommits() {
         \\      const logContent = document.getElementById('logContent');
         \\      const rawText = logContent.textContent;
@@ -588,6 +764,8 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\      return html;
         \\    }
         \\    initTheme();
+        \\    loadRemotes();
+        \\    updateCommitState();
         \\  </script>
         \\</body></html>
     );

@@ -383,6 +383,207 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    // Handle git commit endpoint
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/commit")) {
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+
+        // Read the request body for the commit message
+        const body = readRequestBody(arena.allocator(), &stream_reader, &request, request_raw) catch |err| {
+            if (err == error.RequestTooLarge) {
+                http.sendErrorResponse(ctx.stream, ctx.io, .payload_too_large, "Request body too large") catch {};
+            } else {
+                std.debug.print("Error reading commit request body: {s}\n", .{@errorName(err)});
+                http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Failed to read request body") catch {};
+            }
+            return;
+        };
+
+        // Parse JSON body to extract message
+        const message = extractJsonString(body, "message") orelse {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Missing 'message' field in request body") catch {};
+            return;
+        };
+
+        if (message.len == 0) {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Commit message cannot be empty") catch {};
+            return;
+        }
+
+        if (message.len > 4096) {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Commit message too long (max 4096 bytes)") catch {};
+            return;
+        }
+
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
+
+        const output = git.commitGit(ctx.io, arena.allocator(), resolved.dir, message) catch |err| {
+            std.debug.print("Error committing: {s}\n", .{@errorName(err)});
+            http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to commit") catch {};
+            return;
+        };
+        defer arena.allocator().free(output);
+
+        try http.sendResponseHeaders(ctx.stream, ctx.io, .ok, &[_]struct { []const u8, []const u8 }{
+            .{ "Content-Type", "application/json" },
+        });
+        var write_buf_c: [8192]u8 = undefined;
+        var stream_writer_c = ctx.stream.writer(ctx.io, &write_buf_c);
+        // Build JSON response with success and output
+        try stream_writer_c.interface.writeAll("{\"success\":true,\"output\":\"");
+        // Escape the output for JSON
+        for (output) |c| {
+            switch (c) {
+                '"' => try stream_writer_c.interface.writeAll("\\\""),
+                '\\' => try stream_writer_c.interface.writeAll("\\\\"),
+                '\n' => try stream_writer_c.interface.writeAll("\\n"),
+                '\r' => try stream_writer_c.interface.writeAll("\\r"),
+                '\t' => try stream_writer_c.interface.writeAll("\\t"),
+                else => {
+                    var byte: [1]u8 = .{c};
+                    try stream_writer_c.interface.writeAll(&byte);
+                },
+            }
+        }
+        try stream_writer_c.interface.writeAll("\"}");
+        try stream_writer_c.interface.flush();
+        return;
+    }
+
+    // Handle git remotes endpoint
+    if (request.method == .GET and std.mem.startsWith(u8, request.path, "/__git__/remotes")) {
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
+
+        const remotes = git.getRemotes(ctx.io, arena.allocator(), resolved.dir) catch |err| {
+            std.debug.print("Error getting remotes: {s}\n", .{@errorName(err)});
+            http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to get remotes") catch {};
+            return;
+        };
+        defer {
+            for (remotes) |r| arena.allocator().free(r);
+            arena.allocator().free(remotes);
+        }
+
+        try http.sendResponseHeaders(ctx.stream, ctx.io, .ok, &[_]struct { []const u8, []const u8 }{
+            .{ "Content-Type", "application/json" },
+        });
+        var write_buf_rem: [4096]u8 = undefined;
+        var stream_writer_rem = ctx.stream.writer(ctx.io, &write_buf_rem);
+        // Build JSON: {"remotes":["origin",...]}
+        try stream_writer_rem.interface.writeAll("{\"remotes\":[");
+        for (remotes, 0..) |r, i| {
+            if (i > 0) try stream_writer_rem.interface.writeAll(",");
+            try stream_writer_rem.interface.writeAll("\"");
+            for (r) |c| {
+                switch (c) {
+                    '"' => try stream_writer_rem.interface.writeAll("\\\""),
+                    '\\' => try stream_writer_rem.interface.writeAll("\\\\"),
+                    else => {
+                        var byte: [1]u8 = .{c};
+                        try stream_writer_rem.interface.writeAll(&byte);
+                    },
+                }
+            }
+            try stream_writer_rem.interface.writeAll("\"");
+        }
+        try stream_writer_rem.interface.writeAll("]}");
+        try stream_writer_rem.interface.flush();
+        return;
+    }
+
+    // Handle git push endpoint
+    if (request.method == .POST and std.mem.startsWith(u8, request.path, "/__git__/push")) {
+        const query = if (std.mem.indexOf(u8, request.path, "?")) |qi| request.path[qi + 1 ..] else "";
+
+        // Read the request body
+        const body = readRequestBody(arena.allocator(), &stream_reader, &request, request_raw) catch |err| {
+            if (err == error.RequestTooLarge) {
+                http.sendErrorResponse(ctx.stream, ctx.io, .payload_too_large, "Request body too large") catch {};
+            } else {
+                std.debug.print("Error reading push request body: {s}\n", .{@errorName(err)});
+                http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Failed to read request body") catch {};
+            }
+            return;
+        };
+
+        // Parse JSON body to extract remote and branch
+        const remote = extractJsonString(body, "remote") orelse {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Missing 'remote' field in request body") catch {};
+            return;
+        };
+
+        const branch = extractJsonString(body, "branch") orelse {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Missing 'branch' field in request body") catch {};
+            return;
+        };
+
+        if (remote.len == 0) {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Remote name cannot be empty") catch {};
+            return;
+        }
+
+        if (branch.len == 0) {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Branch name cannot be empty") catch {};
+            return;
+        }
+
+        const resolved = resolveGitDir(ctx.io, arena.allocator(), ctx.root_dir, query);
+        defer if (resolved.must_close) resolved.dir.close(ctx.io);
+
+        // Validate remote exists
+        const valid_remotes = git.getRemotes(ctx.io, arena.allocator(), resolved.dir) catch &[_][]const u8{};
+        defer {
+            for (valid_remotes) |r| arena.allocator().free(r);
+            if (valid_remotes.len > 0) arena.allocator().free(valid_remotes);
+        }
+
+        var remote_valid = false;
+        for (valid_remotes) |r| {
+            if (std.mem.eql(u8, r, remote)) {
+                remote_valid = true;
+                break;
+            }
+        }
+
+        if (!remote_valid) {
+            http.sendErrorResponse(ctx.stream, ctx.io, .bad_request, "Invalid remote name") catch {};
+            return;
+        }
+
+        const output = git.pushToRemote(ctx.io, arena.allocator(), resolved.dir, remote, branch) catch |err| {
+            std.debug.print("Error pushing: {s}\n", .{@errorName(err)});
+            http.sendErrorResponse(ctx.stream, ctx.io, .internal_server_error, "Failed to push to remote") catch {};
+            return;
+        };
+        defer arena.allocator().free(output);
+
+        try http.sendResponseHeaders(ctx.stream, ctx.io, .ok, &[_]struct { []const u8, []const u8 }{
+            .{ "Content-Type", "application/json" },
+        });
+        var write_buf_p: [8192]u8 = undefined;
+        var stream_writer_p = ctx.stream.writer(ctx.io, &write_buf_p);
+        try stream_writer_p.interface.writeAll("{\"success\":true,\"output\":\"");
+        for (output) |c| {
+            switch (c) {
+                '"' => try stream_writer_p.interface.writeAll("\\\""),
+                '\\' => try stream_writer_p.interface.writeAll("\\\\"),
+                '\n' => try stream_writer_p.interface.writeAll("\\n"),
+                '\r' => try stream_writer_p.interface.writeAll("\\r"),
+                '\t' => try stream_writer_p.interface.writeAll("\\t"),
+                else => {
+                    var byte: [1]u8 = .{c};
+                    try stream_writer_p.interface.writeAll(&byte);
+                },
+            }
+        }
+        try stream_writer_p.interface.writeAll("\"}");
+        try stream_writer_p.interface.flush();
+        return;
+    }
+
     // URL decode the path
     const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
         std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
@@ -497,6 +698,37 @@ fn findBodyStart(data: []const u8) ?usize {
     // Fall back to bare LF terminator — only 2 bytes to skip, not 4.
     if (std.mem.indexOf(u8, data, "\n\n")) |idx| {
         return idx + 2;
+    }
+    return null;
+}
+
+/// Extract a string value from a simple JSON body by key.
+/// Looks for "key":"value" pattern. Returns the value (unescaped), or null if not found.
+fn extractJsonString(body: []const u8, key: []const u8) ?[]const u8 {
+    // Build '"key":"' to search for
+    var needle_buf: [128]u8 = undefined;
+    if (key.len + 4 > needle_buf.len) return null;
+    needle_buf[0] = '"';
+    @memcpy(needle_buf[1 .. key.len + 1], key);
+    needle_buf[key.len + 1] = '"';
+    needle_buf[key.len + 2] = ':';
+    needle_buf[key.len + 3] = '"';
+    const needle = needle_buf[0 .. key.len + 4];
+
+    if (std.mem.indexOf(u8, body, needle)) |start_idx| {
+        const val_start = start_idx + needle.len;
+        // Find the closing quote (handle escaped quotes)
+        var i: usize = val_start;
+        while (i < body.len) {
+            if (body[i] == '\\') {
+                i += 2; // skip escaped character
+                continue;
+            }
+            if (body[i] == '"') {
+                return body[val_start..i];
+            }
+            i += 1;
+        }
     }
     return null;
 }

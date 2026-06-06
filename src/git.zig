@@ -302,6 +302,44 @@ pub fn restoreFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, file_
     defer allocator.free(result);
 }
 
+/// Commit staged changes with a message. Returns commit output (caller owns).
+pub fn commitGit(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, message: []const u8) ![]const u8 {
+    return runGit(io, allocator, root_dir, &[_][]const u8{
+        "commit", "-m", message,
+    });
+}
+
+/// Get list of remote names. Returns owned slice of owned strings.
+pub fn getRemotes(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir) ![][]const u8 {
+    const output = runGit(io, allocator, root_dir, &[_][]const u8{
+        "remote",
+    }) catch return try allocator.alloc([]const u8, 0);
+    defer allocator.free(output);
+
+    var remotes = std.ArrayList([]const u8).initCapacity(allocator, 4) catch return error.OutOfMemory;
+    errdefer {
+        for (remotes.items) |r| allocator.free(r);
+        remotes.deinit(allocator);
+    }
+
+    var lines = std.mem.splitScalar(u8, output, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r\n");
+        if (trimmed.len > 0) {
+            try remotes.append(allocator, try allocator.dupe(u8, trimmed));
+        }
+    }
+
+    return try remotes.toOwnedSlice(allocator);
+}
+
+/// Push to a remote. Returns push output (caller owns).
+pub fn pushToRemote(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, remote: []const u8, branch: []const u8) ![]const u8 {
+    return runGit(io, allocator, root_dir, &[_][]const u8{
+        "push", remote, branch,
+    });
+}
+
 /// Open a directory by navigating up from `from_dir` using `..` segments.
 /// `target_abs_path` must be an ancestor of `from_dir` (or equal to it).
 /// Returns the opened dir. Caller must close it if levels_up > 0.
