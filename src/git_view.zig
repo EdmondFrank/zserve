@@ -189,9 +189,17 @@ pub fn serveGitView(io: Io, allocator: std.mem.Allocator, stream: Io.net.Stream,
         \\    .diff-ctx { background: var(--bg); color: var(--text); }
         \\    .no-changes { padding: 2em; color: var(--text2); font-size: 14px; }
         \\    @media (max-width: 700px) {
-        \\      .layout { flex-direction: column; height: auto; }
-        \\      .sidebar { width: 100%; max-width: 100%; height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
-        \\      .diff-panel { height: 60vh; }
+        \\      .layout { flex-direction: column; height: auto; min-height: 100vh; }
+        \\      .sidebar { width: 100%; max-width: 100%; height: auto; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+        \\      .diff-panel { flex: 1; min-height: 50vh; }
+        \\      .sidebar-header { padding: 12px 16px; font-size: 14px; min-height: 44px; }
+        \\      .file-item { padding: 12px 16px; min-height: 44px; }
+        \\      .log-toggle { padding: 12px 16px; font-size: 13px; min-height: 44px; }
+        \\      .commit-item { padding: 10px 12px; min-height: 40px; }
+        \\      .stage-btn { width: 32px; height: 32px; font-size: 18px; }
+        \\      .header { flex-wrap: wrap; gap: 8px; padding: 0.6em 1em; }
+        \\      .header-right { gap: 6px; }
+        \\      .commit-section, .push-section, .log-section { padding: 0.6em 1em; }
         \\    }
         \\  </style>
         \\</head>
