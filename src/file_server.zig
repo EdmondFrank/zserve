@@ -12,7 +12,37 @@ fn isPreviewableFile(mime_type: []const u8) bool {
     return std.mem.eql(u8, mime_type, "application/json") or
         std.mem.eql(u8, mime_type, "application/yaml") or
         std.mem.eql(u8, mime_type, "application/toml") or
-        std.mem.startsWith(u8, mime_type, "application/x-sh");
+        std.mem.startsWith(u8, mime_type, "application/x-sh") or
+        isSourceCodeFile(mime_type);
+}
+
+/// Check if a file is a source code file that can be previewed with syntax highlighting
+fn isSourceCodeFile(mime_type: []const u8) bool {
+    return std.mem.eql(u8, mime_type, "application/javascript; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-typescript; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-jsx; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-python; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-ruby; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-go; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-rust; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-java; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-c; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-c++; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-swift; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-kotlin; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-php; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-zig; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-vue; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-svelte; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-scss; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-less; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-sql; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-graphql; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/xml; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-ini; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-dockerfile; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-makefile; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/css; charset=utf-8");
 }
 
 /// Check if a file is a Markdown file
@@ -182,6 +212,56 @@ fn servePreview(
         "bash"
     else if (std.mem.startsWith(u8, mime_type, "text/markdown"))
         "markdown"
+    else if (std.mem.eql(u8, mime_type, "application/javascript; charset=utf-8"))
+        "javascript"
+    else if (std.mem.eql(u8, mime_type, "text/x-typescript; charset=utf-8"))
+        "typescript"
+    else if (std.mem.eql(u8, mime_type, "text/x-jsx; charset=utf-8"))
+        "javascript"
+    else if (std.mem.eql(u8, mime_type, "text/x-python; charset=utf-8"))
+        "python"
+    else if (std.mem.eql(u8, mime_type, "text/x-ruby; charset=utf-8"))
+        "ruby"
+    else if (std.mem.eql(u8, mime_type, "text/x-go; charset=utf-8"))
+        "go"
+    else if (std.mem.eql(u8, mime_type, "text/x-rust; charset=utf-8"))
+        "rust"
+    else if (std.mem.eql(u8, mime_type, "text/x-java; charset=utf-8"))
+        "java"
+    else if (std.mem.eql(u8, mime_type, "text/x-c; charset=utf-8"))
+        "c"
+    else if (std.mem.eql(u8, mime_type, "text/x-c++; charset=utf-8"))
+        "cpp"
+    else if (std.mem.eql(u8, mime_type, "text/x-swift; charset=utf-8"))
+        "swift"
+    else if (std.mem.eql(u8, mime_type, "text/x-kotlin; charset=utf-8"))
+        "kotlin"
+    else if (std.mem.eql(u8, mime_type, "text/x-php; charset=utf-8"))
+        "php"
+    else if (std.mem.eql(u8, mime_type, "text/x-zig; charset=utf-8"))
+        "zig"
+    else if (std.mem.eql(u8, mime_type, "text/x-vue; charset=utf-8"))
+        "xml"
+    else if (std.mem.eql(u8, mime_type, "text/x-svelte; charset=utf-8"))
+        "xml"
+    else if (std.mem.eql(u8, mime_type, "text/css; charset=utf-8"))
+        "css"
+    else if (std.mem.eql(u8, mime_type, "text/x-scss; charset=utf-8"))
+        "scss"
+    else if (std.mem.eql(u8, mime_type, "text/x-less; charset=utf-8"))
+        "less"
+    else if (std.mem.eql(u8, mime_type, "text/x-sql; charset=utf-8"))
+        "sql"
+    else if (std.mem.eql(u8, mime_type, "text/x-graphql; charset=utf-8"))
+        "graphql"
+    else if (std.mem.eql(u8, mime_type, "text/xml; charset=utf-8"))
+        "xml"
+    else if (std.mem.eql(u8, mime_type, "text/x-ini; charset=utf-8"))
+        "ini"
+    else if (std.mem.eql(u8, mime_type, "text/x-dockerfile; charset=utf-8"))
+        "dockerfile"
+    else if (std.mem.eql(u8, mime_type, "text/x-makefile; charset=utf-8"))
+        "makefile"
     else
         "text";
 
@@ -213,6 +293,26 @@ fn servePreview(
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/less.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/graphql.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/makefile.min.js"></script>
         \\  <style>
         \\    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f6f8fa; }}
         \\    .header {{ background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 1em 2em; box-shadow: 0 2px 8px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: space-between; }}

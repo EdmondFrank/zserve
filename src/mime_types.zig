@@ -44,6 +44,32 @@ pub fn getMimeType(path: []const u8) []const u8 {
     if (std.mem.eql(u8, ext, ".py")) return "text/x-python; charset=utf-8";
     if (std.mem.eql(u8, ext, ".rb")) return "text/x-ruby; charset=utf-8";
     if (std.mem.eql(u8, ext, ".sh")) return "application/x-sh; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".js")) return "application/javascript; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".ts")) return "text/x-typescript; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".tsx")) return "text/x-typescript; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".jsx")) return "text/x-jsx; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".go")) return "text/x-go; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".rs")) return "text/x-rust; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".java")) return "text/x-java; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".c")) return "text/x-c; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".cpp") or std.mem.eql(u8, ext, ".cc") or std.mem.eql(u8, ext, ".cxx")) return "text/x-c++; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".h")) return "text/x-c; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".hpp")) return "text/x-c++; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".swift")) return "text/x-swift; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".kt")) return "text/x-kotlin; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".php")) return "text/x-php; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".zig")) return "text/x-zig; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".vue")) return "text/x-vue; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".svelte")) return "text/x-svelte; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".css")) return "text/css; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".scss") or std.mem.eql(u8, ext, ".sass")) return "text/x-scss; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".less")) return "text/x-less; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".sql")) return "text/x-sql; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".graphql") or std.mem.eql(u8, ext, ".gql")) return "text/x-graphql; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".xml")) return "text/xml; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".ini")) return "text/x-ini; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".dockerfile")) return "text/x-dockerfile; charset=utf-8";
+    if (std.mem.eql(u8, ext, ".makefile") or std.mem.eql(u8, ext, ".mk")) return "text/x-makefile; charset=utf-8";
 
     // Markup types
     if (std.mem.eql(u8, ext, ".md")) return "text/markdown; charset=utf-8";
