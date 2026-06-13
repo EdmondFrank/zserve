@@ -42,7 +42,19 @@ fn isSourceCodeFile(mime_type: []const u8) bool {
         std.mem.eql(u8, mime_type, "text/x-ini; charset=utf-8") or
         std.mem.eql(u8, mime_type, "text/x-dockerfile; charset=utf-8") or
         std.mem.eql(u8, mime_type, "text/x-makefile; charset=utf-8") or
-        std.mem.eql(u8, mime_type, "text/css; charset=utf-8");
+        std.mem.eql(u8, mime_type, "text/css; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-cmake; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-justfile; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-elixir; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-dart; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-erlang; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "application/erlang; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-haskell; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-lua; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-rsrc; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-perl; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-terraform; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "text/x-nginx-conf; charset=utf-8");
 }
 
 /// Check if a file is a Markdown file
@@ -267,6 +279,36 @@ fn getHighlightJsScripts(lang: []const u8) []const u8 {
     if (std.mem.eql(u8, lang, "makefile")) return
         \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/makefile.min.js"></script>
     ;
+    if (std.mem.eql(u8, lang, "cmake")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cmake.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "elixir")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elixir.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "dart")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dart.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "erlang")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/erlang.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "haskell")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/haskell.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "lua")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "r")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/r.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "perl")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/perl.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "hcl")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/terraform.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "nginx")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/nginx.min.js"></script>
+    ;
 
     // Default: no additional scripts needed for plain text
     return "";
@@ -358,6 +400,29 @@ fn servePreview(
         "dockerfile"
     else if (std.mem.eql(u8, mime_type, "text/x-makefile; charset=utf-8"))
         "makefile"
+    else if (std.mem.eql(u8, mime_type, "text/x-cmake; charset=utf-8"))
+        "cmake"
+    else if (std.mem.eql(u8, mime_type, "text/x-justfile; charset=utf-8"))
+        "bash"
+    else if (std.mem.eql(u8, mime_type, "text/x-elixir; charset=utf-8"))
+        "elixir"
+    else if (std.mem.eql(u8, mime_type, "text/x-dart; charset=utf-8"))
+        "dart"
+    else if (std.mem.eql(u8, mime_type, "text/x-erlang; charset=utf-8") or
+        std.mem.eql(u8, mime_type, "application/erlang; charset=utf-8"))
+        "erlang"
+    else if (std.mem.eql(u8, mime_type, "text/x-haskell; charset=utf-8"))
+        "haskell"
+    else if (std.mem.eql(u8, mime_type, "text/x-lua; charset=utf-8"))
+        "lua"
+    else if (std.mem.eql(u8, mime_type, "text/x-rsrc; charset=utf-8"))
+        "r"
+    else if (std.mem.eql(u8, mime_type, "text/x-perl; charset=utf-8"))
+        "perl"
+    else if (std.mem.eql(u8, mime_type, "text/x-terraform; charset=utf-8"))
+        "hcl"
+    else if (std.mem.eql(u8, mime_type, "text/x-nginx-conf; charset=utf-8"))
+        "nginx"
     else
         "text";
 
