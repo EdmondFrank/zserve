@@ -176,6 +176,102 @@ fn serveMarkdownPreview(
     );
 }
 
+/// Get the required highlight.js script tags for a specific language.
+/// Returns only the language-specific modules needed, not the core library.
+fn getHighlightJsScripts(lang: []const u8) []const u8 {
+    // Language dependency map:
+    // - TypeScript includes JavaScript
+    // - C++ depends on C
+    // - SCSS/Less depend on CSS
+    if (std.mem.eql(u8, lang, "json")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "yaml")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "toml")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "bash")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "markdown")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "javascript")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "typescript")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "python")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "ruby")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "go")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "rust")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "java")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "c")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "cpp")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "swift")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "kotlin")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "php")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "zig")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "css")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "scss")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "less")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/less.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "sql")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "graphql")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/graphql.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "xml")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "ini")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "dockerfile")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
+    ;
+    if (std.mem.eql(u8, lang, "makefile")) return
+        \\<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/makefile.min.js"></script>
+    ;
+
+    // Default: no additional scripts needed for plain text
+    return "";
+}
+
 /// Serve a preview of JSON/YAML/TOML file with syntax highlighting
 fn servePreview(
     io: Io,
@@ -281,70 +377,244 @@ fn servePreview(
     }
 
     // Build HTML response - note: {{ and }} are escaped braces for Zig fmt
+    // The template uses {6s} for language-specific highlight.js scripts
     const html_template =
         \\<!DOCTYPE html>
         \\<html><head>
         \\  <meta charset="utf-8">
         \\  <title>{s} - Preview</title>
-        \\  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+        \\  <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
         \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/swift.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/zig.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/less.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/graphql.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js"></script>
-        \\  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/makefile.min.js"></script>
+        \\  {s}
         \\  <style>
-        \\    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f6f8fa; }}
-        \\    .header {{ background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 1em 2em; box-shadow: 0 2px 8px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: space-between; }}
-        \\    .header h1 {{ margin: 0; font-size: 1.2em; font-weight: 500; }}
-        \\    .header .meta {{ font-size: 0.85em; opacity: 0.9; }}
-        \\    .header a {{ color: white; text-decoration: none; padding: 0.5em 1em; background: rgba(255,255,255,0.2); border-radius: 6px; transition: background 0.2s; }}
-        \\    .header a:hover {{ background: rgba(255,255,255,0.3); }}
-        \\    .container {{ max-width: 1200px; margin: 2em auto; padding: 0 2em; }}
-        \\    .content {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }}
-        \\    pre {{ margin: 0; padding: 1.5em; overflow-x: auto; font-size: 14px; line-height: 1.6; }}
-        \\    code {{ font-family: "SF Mono", Monaco, Inconsolata, "Fira Code", monospace; }}
+        \\    :root {{
+        \\      --bg-color: #ffffff;
+        \\      --text-color: #1f2937;
+        \\      --text-secondary: #6b7280;
+        \\      --border-color: #e5e7eb;
+        \\      --header-gradient-start: #3b82f6;
+        \\      --header-gradient-end: #2563eb;
+        \\      --header-text: #ffffff;
+        \\      --code-bg: #f6f8fa;
+        \\      --code-border: #e5e7eb;
+        \\      --scrollbar-thumb: #d1d5db;
+        \\      --scrollbar-track: #f3f4f6;
+        \\      --line-number-color: #9ca3af;
+        \\      --line-number-border: #e5e7eb;
+        \\    }}
+        \\    body.dark-mode {{
+        \\      --bg-color: #0d1117;
+        \\      --text-color: #c9d1d9;
+        \\      --text-secondary: #8b949e;
+        \\      --border-color: #30363d;
+        \\      --header-gradient-start: #3b82f6;
+        \\      --header-gradient-end: #2563eb;
+        \\      --header-text: #ffffff;
+        \\      --code-bg: #161b22;
+        \\      --code-border: #30363d;
+        \\      --scrollbar-thumb: #30363d;
+        \\      --scrollbar-track: #0d1117;
+        \\      --line-number-color: #484f58;
+        \\      --line-number-border: #30363d;
+        \\    }}
+        \\    * {{ box-sizing: border-box; }}
+        \\    html, body {{ margin: 0; padding: 0; }}
+        \\    body {{
+        \\      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        \\      background-color: var(--bg-color);
+        \\      color: var(--text-color);
+        \\      transition: background-color 0.3s, color 0.3s;
+        \\    }}
+        \\    ::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+        \\    ::-webkit-scrollbar-track {{ background: var(--scrollbar-track); }}
+        \\    ::-webkit-scrollbar-thumb {{ background: var(--scrollbar-thumb); border-radius: 4px; }}
+        \\    ::-webkit-scrollbar-thumb:hover {{ background: var(--text-secondary); }}
+        \\    .header {{
+        \\      background: linear-gradient(135deg, var(--header-gradient-start) 0%, var(--header-gradient-end) 100%);
+        \\      color: var(--header-text);
+        \\      padding: 0;
+        \\      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        \\      position: sticky;
+        \\      top: 0;
+        \\      z-index: 100;
+        \\    }}
+        \\    .header-content {{
+        \\      max-width: 1400px;
+        \\      margin: 0 auto;
+        \\      padding: 16px 24px;
+        \\      display: flex;
+        \\      align-items: center;
+        \\      justify-content: space-between;
+        \\      flex-wrap: wrap;
+        \\      gap: 12px;
+        \\    }}
+        \\    .header-left {{ display: flex; align-items: center; gap: 16px; }}
+        \\    .header-title {{
+        \\      font-size: 1.25rem;
+        \\      font-weight: 600;
+        \\      display: flex;
+        \\      align-items: center;
+        \\      gap: 10px;
+        \\    }}
+        \\    .header-title .icon {{ font-size: 1.4rem; }}
+        \\    .back-btn {{
+        \\      display: inline-flex;
+        \\      align-items: center;
+        \\      gap: 6px;
+        \\      padding: 8px 16px;
+        \\      background: rgba(255,255,255,0.15);
+        \\      border: 1px solid rgba(255,255,255,0.25);
+        \\      border-radius: 6px;
+        \\      color: var(--header-text);
+        \\      text-decoration: none;
+        \\      font-size: 0.875rem;
+        \\      font-weight: 500;
+        \\      transition: all 0.2s;
+        \\    }}
+        \\    .back-btn:hover {{ background: rgba(255,255,255,0.25); transform: translateY(-1px); }}
+        \\    .header-right {{ display: flex; align-items: center; gap: 12px; }}
+        \\    .header-meta {{
+        \\      font-size: 0.8125rem;
+        \\      opacity: 0.9;
+        \\      display: flex;
+        \\      gap: 16px;
+        \\    }}
+        \\    .header-meta span {{ display: flex; align-items: center; gap: 4px; }}
+        \\    .theme-toggle {{
+        \\      padding: 8px 12px;
+        \\      background: rgba(255,255,255,0.1);
+        \\      border: 1px solid rgba(255,255,255,0.2);
+        \\      border-radius: 6px;
+        \\      color: var(--header-text);
+        \\      font-size: 0.875rem;
+        \\      cursor: pointer;
+        \\      transition: all 0.2s;
+        \\    }}
+        \\    .theme-toggle:hover {{ background: rgba(255,255,255,0.2); }}
+        \\    .container {{
+        \\      max-width: 1400px;
+        \\      margin: 0 auto;
+        \\      padding: 24px;
+        \\    }}
+        \\    .content {{
+        \\      background: var(--code-bg);
+        \\      border: 1px solid var(--code-border);
+        \\      border-radius: 12px;
+        \\      overflow: hidden;
+        \\      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        \\    }}
+        \\    .code-wrapper {{
+        \\      display: flex;
+        \\      overflow-x: auto;
+        \\    }}
+        \\    .line-numbers {{
+        \\      flex-shrink: 0;
+        \\      padding: 1.5em 0;
+        \\      padding-right: 16px;
+        \\      padding-left: 16px;
+        \\      text-align: right;
+        \\      color: var(--line-number-color);
+        \\      border-right: 1px solid var(--line-number-border);
+        \\      font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+        \\      font-size: 14px;
+        \\      line-height: 1.6;
+        \\      user-select: none;
+        \\      white-space: pre;
+        \\    }}
+        \\    pre {{ margin: 0; padding: 1.5em; overflow-x: auto; font-size: 14px; line-height: 1.6; flex: 1; }}
+        \\    code {{ font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace; }}
         \\    .hljs {{ background: transparent; padding: 0; }}
+        \\    @media (max-width: 640px) {{
+        \\      .header-content {{ padding: 12px 16px; }}
+        \\      .header-title {{ font-size: 1rem; }}
+        \\      .container {{ padding: 16px; }}
+        \\      .header-meta {{ display: none; }}
+        \\    }}
         \\  </style>
         \\</head><body>
-        \\  <div class="header">
-        \\    <div>
-        \\      <h1>📄 {s}</h1>
-        \\      <div class="meta">{s} • {d} bytes</div>
+        \\  <header class="header">
+        \\    <div class="header-content">
+        \\      <div class="header-left">
+        \\        <a href="/" class="back-btn">
+        \\          <span>←</span> Back
+        \\        </a>
+        \\        <div class="header-title">
+        \\          <span class="icon">📄</span>
+        \\          <span>{s}</span>
+        \\        </div>
+        \\      </div>
+        \\      <div class="header-right">
+        \\        <div class="header-meta">
+        \\          <span>{s}</span>
+        \\          <span>{d} bytes</span>
+        \\        </div>
+        \\        <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">🌙 Dark</button>
+        \\      </div>
         \\    </div>
-        \\    <a href="/">← Back to directory</a>
-        \\  </div>
+        \\  </header>
         \\  <div class="container">
         \\    <div class="content">
-        \\      <pre><code class="language-{s}">{s}</code></pre>
+        \\      <div class="code-wrapper">
+        \\        <div class="line-numbers" id="lineNumbers"></div>
+        \\        <pre><code class="language-{s}">{s}</code></pre>
+        \\      </div>
         \\    </div>
         \\  </div>
-        \\  <script>hljs.highlightAll();</script>
+        \\  <script>
+        \\    // Generate line numbers
+        \\    (function() {{
+        \\      const code = document.querySelector('code');
+        \\      const lineNumbers = document.getElementById('lineNumbers');
+        \\      const lines = code.textContent.split('\n');
+        \\      // Remove last empty line if present
+        \\      if (lines[lines.length - 1] === '') lines.pop();
+        \\      lineNumbers.textContent = lines.map((_, i) => i + 1).join('\n');
+        \\    }})();
+        \\    // Theme handling
+        \\    function toggleTheme() {{
+        \\      const isDark = document.body.classList.toggle('dark-mode');
+        \\      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        \\      updateThemeUI();
+        \\    }}
+        \\    function updateThemeUI() {{
+        \\      const isDark = document.body.classList.contains('dark-mode');
+        \\      const btn = document.getElementById('themeToggle');
+        \\      if (btn) btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+        \\      const hljsTheme = document.getElementById('hljs-theme');
+        \\      if (hljsTheme) {{
+        \\        hljsTheme.href = isDark
+        \\          ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+        \\          : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+        \\      }}
+        \\    }}
+        \\    function initTheme() {{
+        \\      const savedTheme = localStorage.getItem('theme');
+        \\      if (savedTheme === 'dark') {{
+        \\        document.body.classList.add('dark-mode');
+        \\      }} else if (savedTheme === 'light') {{
+        \\        document.body.classList.remove('dark-mode');
+        \\      }} else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {{
+        \\        document.body.classList.add('dark-mode');
+        \\      }}
+        \\      updateThemeUI();
+        \\    }}
+        \\    initTheme();
+        \\    hljs.highlightAll();
+        \\  </script>
         \\</body></html>
     ;
 
+    // Get language-specific highlight.js scripts
+    const hljs_scripts = getHighlightJsScripts(lang);
+
     const html = try std.fmt.allocPrint(allocator, html_template, .{
-        filename, filename, mime_type, file_size, lang, escaped.items,
+        filename, // {0s} - page title
+        hljs_scripts, // {1s} - language-specific scripts
+        filename, // {2s} - filename in header
+        mime_type, // {3s} - mime type
+        file_size, // {4d} - file size
+        lang, // {5s} - language class
+        escaped.items, // {6s} - escaped code content
     });
     defer allocator.free(html);
 
