@@ -227,6 +227,17 @@ pub fn getMimeType(path: []const u8) []const u8 {
     if (std.mem.eql(u8, ext, ".pdf")) return "application/pdf";
     if (std.mem.eql(u8, ext, ".zip")) return "application/zip";
 
+    // Office Open XML types
+    if (std.mem.eql(u8, ext, ".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if (std.mem.eql(u8, ext, ".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if (std.mem.eql(u8, ext, ".xlsm")) return "application/vnd.ms-excel.sheet.macroEnabled.12";
+    if (std.mem.eql(u8, ext, ".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+    // Legacy Office types (OLE2 binary)
+    if (std.mem.eql(u8, ext, ".doc")) return "application/msword";
+    if (std.mem.eql(u8, ext, ".xls")) return "application/vnd.ms-excel";
+    if (std.mem.eql(u8, ext, ".ppt")) return "application/vnd.ms-powerpoint";
+
     // Code types
     if (std.mem.eql(u8, ext, ".py")) return "text/x-python; charset=utf-8";
     if (std.mem.eql(u8, ext, ".rb")) return "text/x-ruby; charset=utf-8";

@@ -1,0 +1,17 @@
+.{
+    .name = .zserve,
+    .fingerprint = 0xba39e5b3d225f618,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .nanoxml = .{
+            .url = "https://gh-proxy.com/https://github.com/justrach/nanoxml/archive/refs/tags/v0.0.2.tar.gz",
+            .hash = "nanoxml-0.0.2-C0H8DgL2BAAXReJ3SwOyNMyiAnF2J6zQkg34IFgFokag",
+        },
+    },
+}

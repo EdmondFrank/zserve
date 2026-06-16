@@ -16,6 +16,14 @@ pub fn build(b: *std.Build) void {
         .root_module = root_module,
     });
 
+    // Add nanoxml dependency for Office Open XML preview
+    if (b.lazyDependency("nanoxml", .{
+        .target = target,
+        .optimize = optimize,
+    })) |nanoxml| {
+        root_module.addImport("nanoxml", nanoxml.module("nanoxml"));
+    }
+
     b.installArtifact(exe);
 
     // Run step

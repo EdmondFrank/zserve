@@ -8,6 +8,7 @@
 *.pdb
 
 .zig-cache/**/*
+zig-pkg/*
 zig-out/*
 .cecli*
 .aider*
