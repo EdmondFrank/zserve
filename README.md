@@ -23,6 +23,8 @@ A fast, feature-rich HTTP file server written in Zig. Serves static files with a
 - 📝 **Markdown preview** — Rendered preview with table of contents, syntax highlighting, and dark mode
 - 🔍 **JSON / YAML / TOML preview** — Syntax-highlighted structured data preview
 - 📺 **Log streaming** — Live `tail -f`-style streaming for text/log files
+- 📄 **Office document preview** — DOCX, XLSX, XLSM, and PPTX previews with text extraction and table rendering (up to 50 MB)
+- 📋 **Legacy Office preview** — DOC file preview with text extraction, XLS and PPT with metadata display (up to 50 MB)
 
 ### Developer Tools
 - ▶️ **Script execution** — Execute shell scripts directly from the browser with output display
@@ -44,6 +46,7 @@ Navigate to `/__git__/` (or `/__git__?path=<subdir>`) from any directory listing
 ## Requirements
 
 - Zig 0.16.0 or later
+- [nanoxml](https://github.com/justrach/nanoxml) — Zero-dependency XML parser for Office Open XML support (automatically fetched during build)
 
 ## Building
 
@@ -129,6 +132,8 @@ zserve/
 │   ├── truncate.zig       # Log file truncation
 │   ├── execute.zig        # Shell script execution
 │   ├── markdown.zig       # Markdown rendering
+│   ├── ooxml_preview.zig  # Office Open XML preview (DOCX, XLSX, XLSM, PPTX)
+│   ├── legacy_preview.zig # Legacy Office preview (DOC, XLS, PPT)
 │   ├── git.zig            # Git command wrappers
 │   ├── git_view.zig       # Git status/diff HTML view
 │   ├── thread_pool.zig    # Concurrent connection pool
@@ -160,6 +165,10 @@ zserve/
 
 ### Documents & Data
 - PDF (`.pdf`), ZIP (`.zip`), JSON (`.json`), YAML (`.yaml`, `.yml`), TOML (`.toml`), Markdown (`.md`)
+
+### Office Documents
+- **Modern Office**: DOCX, XLSX, XLSM, PPTX — preview with text extraction and table rendering (up to 50 MB)
+- **Legacy Office**: DOC, XLS, PPT — preview with text extraction and metadata display (up to 50 MB)
 
 Other file types are served as `application/octet-stream`.
 
