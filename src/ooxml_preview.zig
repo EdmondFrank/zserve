@@ -3,6 +3,113 @@ const Io = std.Io;
 const http = @import("http.zig");
 const nanoxml = @import("nanoxml");
 
+// ── Image extraction infrastructure ──────────────────────────────────────
+
+const ImageInfo = struct {
+    name: []const u8,
+    content_type: []const u8,
+    base64_data: []const u8,
+};
+
+const MAX_IMAGES = 10;
+const MAX_IMAGE_RAW_SIZE: usize = 2 * 1024 * 1024; // 2MB per image
+const MAX_TOTAL_BASE64: usize = 10 * 1024 * 1024; // 10MB total
+
+fn isImageContentType(ct: []const u8) bool {
+    return std.mem.startsWith(u8, ct, "image/");
+}
+
+fn isMediaPath(name: []const u8) bool {
+    return std.mem.indexOf(u8, name, "media/") != null;
+}
+
+fn extractMediaImages(pkg: *nanoxml.opc.Package, allocator: std.mem.Allocator) !std.ArrayList(ImageInfo) {
+    var images: std.ArrayList(ImageInfo) = .empty;
+    errdefer {
+        for (images.items) |img| allocator.free(img.base64_data);
+        images.deinit(allocator);
+    }
+    try images.ensureTotalCapacity(allocator, 4);
+    var total_base64: usize = 0;
+
+    const part_names = pkg.partNames(allocator) catch return images;
+    defer allocator.free(part_names);
+
+    for (part_names) |name| {
+        if (images.items.len >= MAX_IMAGES) break;
+        if (!isMediaPath(name)) continue;
+
+        const ct = pkg.contentTypeOf(name) orelse continue;
+        if (!isImageContentType(ct)) continue;
+
+        const bytes = pkg.getPart(name) catch continue;
+        if (bytes.len == 0 or bytes.len > MAX_IMAGE_RAW_SIZE) continue;
+
+        const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
+        if (total_base64 + encoded_len > MAX_TOTAL_BASE64) break;
+        total_base64 += encoded_len;
+
+        const encoded = allocator.alloc(u8, encoded_len) catch continue;
+        _ = std.base64.standard.Encoder.encode(encoded, bytes);
+
+        images.append(allocator, .{
+            .name = name,
+            .content_type = ct,
+            .base64_data = encoded,
+        }) catch {
+            allocator.free(encoded);
+            break;
+        };
+    }
+
+    return images;
+}
+
+fn buildImageGalleryHtml(allocator: std.mem.Allocator, images: *const std.ArrayList(ImageInfo)) ![]const u8 {
+    if (images.items.len == 0) return "";
+
+    var html: std.ArrayList(u8) = .empty;
+    errdefer html.deinit(allocator);
+    try html.ensureTotalCapacity(allocator, 4096);
+
+    html.appendSlice(allocator,
+        \\<div class="gallery-section">
+        \\  <div class="gallery-header" onclick="toggleGallery()">
+        \\    <span class="gallery-toggle" id="galleryToggle">&#x25B6;</span>
+        \\    <span class="gallery-title">&#x1F5BC; Embedded Images (</span>
+    ) catch return "";
+
+    const count_str = std.fmt.allocPrint(allocator, "{d}", .{images.items.len}) catch "0";
+    defer if (count_str.len > 1) allocator.free(count_str);
+    html.appendSlice(allocator, count_str) catch return "";
+    html.appendSlice(allocator,
+        \\)</span>
+        \\  </div>
+        \\  <div class="gallery-grid" id="galleryGrid">
+    ) catch return "";
+
+    for (images.items, 0..) |img, i| {
+        const img_html = std.fmt.allocPrint(allocator,
+            \\<div class="gallery-item" onclick="openLightbox({d})">
+            \\  <img src="data:{s};base64,{s}" alt="{s}" loading="lazy"/>
+            \\  <div class="gallery-label">{s}</div>
+            \\</div>
+        , .{ i, img.content_type, img.base64_data, img.name, std.fs.path.basename(img.name) }) catch continue;
+        defer allocator.free(img_html);
+        html.appendSlice(allocator, img_html) catch break;
+    }
+
+    html.appendSlice(allocator,
+        \\  </div>
+        \\</div>
+        \\<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+        \\  <img id="lightboxImg" src="" alt=""/>
+        \\</div>
+    ) catch return "";
+
+    return html.toOwnedSlice(allocator) catch "";
+}
+
 pub fn isOfficeFile(mime_type: []const u8) bool {
     return std.mem.eql(u8, mime_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document") or
         std.mem.eql(u8, mime_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") or
@@ -73,6 +180,15 @@ fn renderDocxPreview(
     const escaped = try htmlEscape(allocator, text_buf.items);
     defer allocator.free(escaped);
 
+    // Extract embedded images
+    var images = extractMediaImages(&pkg, allocator) catch std.ArrayList(ImageInfo){};
+    defer {
+        for (images.items) |img| allocator.free(img.base64_data);
+        images.deinit(allocator);
+    }
+    const gallery_html = buildImageGalleryHtml(allocator, &images) catch "";
+    defer if (gallery_html.len > 0) allocator.free(gallery_html);
+
     const filename = std.fs.path.basename(file_path);
     const parent_dir = buildParentDir(allocator, dir_path);
     defer if (parent_dir.len > 1 and !std.mem.startsWith(u8, dir_path, "/")) allocator.free(parent_dir);
@@ -85,8 +201,11 @@ fn renderDocxPreview(
 
     try writer.interface.writeAll("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n");
 
+    const image_count_str = std.fmt.allocPrint(allocator, "{d}", .{images.items.len}) catch "0";
+    defer if (image_count_str.len > 1) allocator.free(image_count_str);
+
     const html = try std.fmt.allocPrint(allocator, docx_html_template, .{
-        filename, parent_dir, filename, size_str, escaped,
+        filename, parent_dir, filename, size_str, image_count_str, escaped, gallery_html,
     });
     defer allocator.free(html);
 
@@ -192,6 +311,15 @@ fn renderXlsxPreview(
         return;
     }
 
+    // Extract embedded images
+    var images = extractMediaImages(&pkg, allocator) catch std.ArrayList(ImageInfo){};
+    defer {
+        for (images.items) |img| allocator.free(img.base64_data);
+        images.deinit(allocator);
+    }
+    const gallery_html = buildImageGalleryHtml(allocator, &images) catch "";
+    defer if (gallery_html.len > 0) allocator.free(gallery_html);
+
     // Build sheet names JSON
     var names_json = std.ArrayList(u8).initCapacity(allocator, 128) catch return;
     defer names_json.deinit(allocator);
@@ -209,6 +337,9 @@ fn renderXlsxPreview(
         names_json.append(allocator, '"') catch return;
     }
     names_json.appendSlice(allocator, "]") catch return;
+
+    const image_count_str = std.fmt.allocPrint(allocator, "{d}", .{images.items.len}) catch "0";
+    defer if (image_count_str.len > 1) allocator.free(image_count_str);
 
     const filename = std.fs.path.basename(file_path);
     const parent_dir = buildParentDir(allocator, dir_path);
@@ -262,7 +393,7 @@ fn renderXlsxPreview(
     }
 
     const html = try std.fmt.allocPrint(allocator, xlsx_html_template, .{
-        filename, parent_dir, filename, size_str, table_html.items, names_json.items,
+        filename, parent_dir, filename, size_str, image_count_str, table_html.items, gallery_html, names_json.items,
     });
     defer allocator.free(html);
 
@@ -314,6 +445,18 @@ fn renderPptxPreview(
         return;
     }
 
+    // Extract embedded images
+    var images = extractMediaImages(&pkg, allocator) catch std.ArrayList(ImageInfo){};
+    defer {
+        for (images.items) |img| allocator.free(img.base64_data);
+        images.deinit(allocator);
+    }
+    const gallery_html = buildImageGalleryHtml(allocator, &images) catch "";
+    defer if (gallery_html.len > 0) allocator.free(gallery_html);
+
+    const image_count_str = std.fmt.allocPrint(allocator, "{d}", .{images.items.len}) catch "0";
+    defer if (image_count_str.len > 1) allocator.free(image_count_str);
+
     const filename = std.fs.path.basename(file_path);
     const parent_dir = buildParentDir(allocator, dir_path);
     defer if (parent_dir.len > 1 and !std.mem.startsWith(u8, dir_path, "/")) allocator.free(parent_dir);
@@ -346,7 +489,7 @@ fn renderPptxPreview(
     slides_json.appendSlice(allocator, "]") catch return;
 
     const html = try std.fmt.allocPrint(allocator, pptx_html_template, .{
-        filename, parent_dir, filename, size_str, slides.items.len, slides_json.items,
+        filename, parent_dir, filename, size_str, image_count_str, slides.items.len, gallery_html, slides_json.items,
     });
     defer allocator.free(html);
 
@@ -435,9 +578,27 @@ const docx_html_template =
     \\    .doc-body {{ font-size:15px; line-height:1.8; white-space:pre-wrap; word-wrap:break-word;
     \\      color:var(--text); background:var(--cbg); border:1px solid var(--cb);
     \\      border-radius:8px; padding:24px 32px; }}
+    \\    .gallery-section {{ margin-top:24px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }}
+    \\    .gallery-header {{ display:flex; align-items:center; gap:8px; padding:12px 16px;
+    \\      background:var(--mbg); cursor:pointer; user-select:none; font-weight:500; }}
+    \\    .gallery-header:hover {{ background:var(--inv); }}
+    \\    .gallery-toggle {{ font-size:.75rem; transition:transform .2s; }}
+    \\    .gallery-toggle.open {{ transform:rotate(90deg); }}
+    \\    .gallery-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    \\      gap:12px; padding:16px; }}
+    \\    .gallery-item {{ cursor:pointer; border:1px solid var(--border); border-radius:6px;
+    \\      overflow:hidden; transition:transform .2s,box-shadow .2s; }}
+    \\    .gallery-item:hover {{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.15); }}
+    \\    .gallery-item img {{ width:100%; height:140px; object-fit:cover; display:block; }}
+    \\    .gallery-label {{ padding:6px 8px; font-size:.75rem; color:var(--text2);
+    \\      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    \\    .lightbox {{ display:none; position:fixed; inset:0; z-index:1000;
+    \\      background:rgba(0,0,0,.85); align-items:center; justify-content:center; }}
+    \\    .lightbox.active {{ display:flex; }}
+    \\    .lightbox img {{ max-width:90vw; max-height:90vh; object-fit:contain; }}
     \\    @media(max-width:1024px) {{ .sidebar {{ display:none; }} .main {{ padding:24px; max-width:100%; }} }}
     \\    @media(max-width:640px) {{ .header-content {{ padding:12px 16px; }} .header-title {{ font-size:1rem; }}
-    \\      .main {{ padding:16px; }} }}
+    \\      .main {{ padding:16px; }} .gallery-grid {{ grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }} }}
     \\</style></head><body>
     \\  <header class="header"><div class="header-content">
     \\    <div class="header-left">
@@ -454,11 +615,16 @@ const docx_html_template =
     \\      <div class="file-meta">
     \\        <div class="file-meta-item"><span class="file-meta-label">Size</span><span class="file-meta-value">{s}</span></div>
     \\        <div class="file-meta-item"><span class="file-meta-label">Type</span><span class="file-meta-value">DOCX Document</span></div>
+    \\        <div class="file-meta-item"><span class="file-meta-label">Images</span><span class="file-meta-value">{s}</span></div>
     \\      </div>
     \\    </div></aside>
-    \\    <main class="main"><div class="doc-body">{s}</div></main>
+    \\    <main class="main"><div class="doc-body">{s}</div>{s}</main>
     \\  </div>
     \\<script>
+    \\function toggleGallery(){{var g=document.getElementById('galleryGrid');var t=document.getElementById('galleryToggle');if(g.style.display==='none'){{g.style.display='grid';t.classList.add('open')}}else{{g.style.display='none';t.classList.remove('open')}}}}
+    \\function openLightbox(i){{var imgs=document.querySelectorAll('.gallery-item img');if(imgs[i]){{document.getElementById('lightboxImg').src=imgs[i].src;document.getElementById('lightbox').classList.add('active')}}}}
+    \\function closeLightbox(e){{if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightboxImg')){{document.getElementById('lightbox').classList.remove('active')}}}}
+    \\document.addEventListener('keydown',function(e){{if(e.key==='Escape')document.getElementById('lightbox').classList.remove('active')}});
     \\function toggleTheme(){{var d=document.body.classList.toggle('dark-mode');localStorage.setItem('theme',d?'dark':'light');updateUI()}}
     \\function updateUI(){{var d=document.body.classList.contains('dark-mode');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'\u2600\uFE0F Light':'\u1F319 Dark'}}
     \\(function(){{var s=localStorage.getItem('theme');if(s==='dark')document.body.classList.add('dark-mode');else if(!s&&window.matchMedia('(prefers-color-scheme:dark)').matches)document.body.classList.add('dark-mode');updateUI()}})()
@@ -502,6 +668,24 @@ const xlsx_html_template =
     \\    .theme-toggle:hover {{ background:rgba(255,255,255,.2); }}
     \\    .sheet-tabs {{ display:flex; gap:4px; padding:12px 24px; background:var(--sb);
     \\      border-bottom:1px solid var(--border); overflow-x:auto; }}
+    \\    .gallery-section {{ margin-top:24px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }}
+    \\    .gallery-header {{ display:flex; align-items:center; gap:8px; padding:12px 16px;
+    \\      background:var(--mbg); cursor:pointer; user-select:none; font-weight:500; }}
+    \\    .gallery-header:hover {{ background:var(--inv); }}
+    \\    .gallery-toggle {{ font-size:.75rem; transition:transform .2s; }}
+    \\    .gallery-toggle.open {{ transform:rotate(90deg); }}
+    \\    .gallery-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    \\      gap:12px; padding:16px; }}
+    \\    .gallery-item {{ cursor:pointer; border:1px solid var(--border); border-radius:6px;
+    \\      overflow:hidden; transition:transform .2s,box-shadow .2s; }}
+    \\    .gallery-item:hover {{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.15); }}
+    \\    .gallery-item img {{ width:100%; height:140px; object-fit:cover; display:block; }}
+    \\    .gallery-label {{ padding:6px 8px; font-size:.75rem; color:var(--text2);
+    \\      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    \\    .lightbox {{ display:none; position:fixed; inset:0; z-index:1000;
+    \\      background:rgba(0,0,0,.85); align-items:center; justify-content:center; }}
+    \\    .lightbox.active {{ display:flex; }}
+    \\    .lightbox img {{ max-width:90vw; max-height:90vh; object-fit:contain; }}
     \\    .sheet-tab {{ padding:8px 16px; border:1px solid var(--border); border-bottom:none;
     \\      border-radius:8px 8px 0 0; background:var(--inv); color:var(--text2);
     \\      cursor:pointer; font-size:.8125rem; font-weight:500; white-space:nowrap; transition:all .2s; }}
@@ -520,18 +704,22 @@ const xlsx_html_template =
     \\  <header class="header"><div class="header-content">
     \\    <div class="header-left">
     \\      <a href="{s}" class="back-btn"><span>&larr;</span> Back</a>
-    \\      <div class="header-title"><span>&#x1F4CA;</span><span>{s}</span><span style="font-size:.75rem;opacity:.7"> ({s})</span></div>
+    \\      <div class="header-title"><span>&#x1F4CA;</span><span>{s}</span><span style="font-size:.75rem;opacity:.7"> ({s})</span><span style="font-size:.75rem;opacity:.7"> | {s} images</span></div>
     \\    </div>
     \\    <div class="header-right">
     \\      <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">&#x1F319; Dark</button>
     \\    </div>
     \\  </div></header>
     \\  <div class="sheet-tabs" id="sheetTabs"></div>
-    \\  <div class="container" id="sheetContent">{s}</div>
+    \\  <div class="container" id="sheetContent">{s}{s}</div>
     \\<script>
     \\var sheets={s};
     \\var tabs=document.getElementById('sheetTabs');
     \\sheets.forEach(function(n,i){{var t=document.createElement('div');t.className='sheet-tab'+(i===0?' active':'');t.textContent=n;t.onclick=function(){{document.querySelectorAll('.sheet-tab').forEach(function(x){{x.classList.remove('active')}});t.classList.add('active');document.querySelectorAll('.sheet').forEach(function(s,j){{s.style.display=j===i?'block':'none'}})}};tabs.appendChild(t)}});
+    \\function toggleGallery(){{var g=document.getElementById('galleryGrid');var t=document.getElementById('galleryToggle');if(g.style.display==='none'){{g.style.display='grid';t.classList.add('open')}}else{{g.style.display='none';t.classList.remove('open')}}}}
+    \\function openLightbox(i){{var imgs=document.querySelectorAll('.gallery-item img');if(imgs[i]){{document.getElementById('lightboxImg').src=imgs[i].src;document.getElementById('lightbox').classList.add('active')}}}}
+    \\function closeLightbox(e){{if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightboxImg')){{document.getElementById('lightbox').classList.remove('active')}}}}
+    \\document.addEventListener('keydown',function(e){{if(e.key==='Escape')document.getElementById('lightbox').classList.remove('active')}});
     \\function toggleTheme(){{var d=document.body.classList.toggle('dark-mode');localStorage.setItem('theme',d?'dark':'light');updateUI()}}
     \\function updateUI(){{var d=document.body.classList.contains('dark-mode');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'\u2600\uFE0F Light':'\u1F319 Dark'}}
     \\(function(){{var s=localStorage.getItem('theme');if(s==='dark')document.body.classList.add('dark-mode');else if(!s&&window.matchMedia('(prefers-color-scheme:dark)').matches)document.body.classList.add('dark-mode');updateUI()}})()
@@ -586,13 +774,31 @@ const pptx_html_template =
     \\    .nav button:hover {{ background:var(--pbh); }}
     \\    .nav button:disabled {{ opacity:.4; cursor:not-allowed; }}
     \\    .nav .info {{ color:var(--pg); font-size:.875rem; min-width:100px; text-align:center; }}
+    \\    .gallery-section {{ margin-top:24px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }}
+    \\    .gallery-header {{ display:flex; align-items:center; gap:8px; padding:12px 16px;
+    \\      background:var(--mbg); cursor:pointer; user-select:none; font-weight:500; }}
+    \\    .gallery-header:hover {{ background:var(--inv); }}
+    \\    .gallery-toggle {{ font-size:.75rem; transition:transform .2s; }}
+    \\    .gallery-toggle.open {{ transform:rotate(90deg); }}
+    \\    .gallery-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    \\      gap:12px; padding:16px; }}
+    \\    .gallery-item {{ cursor:pointer; border:1px solid var(--border); border-radius:6px;
+    \\      overflow:hidden; transition:transform .2s,box-shadow .2s; }}
+    \\    .gallery-item:hover {{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.15); }}
+    \\    .gallery-item img {{ width:100%; height:140px; object-fit:cover; display:block; }}
+    \\    .gallery-label {{ padding:6px 8px; font-size:.75rem; color:var(--text2);
+    \\      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    \\    .lightbox {{ display:none; position:fixed; inset:0; z-index:1000;
+    \\      background:rgba(0,0,0,.85); align-items:center; justify-content:center; }}
+    \\    .lightbox.active {{ display:flex; }}
+    \\    .lightbox img {{ max-width:90vw; max-height:90vh; object-fit:contain; }}
     \\    @media(max-width:640px) {{ .header-content {{ padding:12px 16px; }} .header-title {{ font-size:1rem; }}
     \\      .viewer {{ padding:16px; }} .slide {{ padding:24px; min-height:200px; font-size:16px; }} }}
     \\</style></head><body>
     \\  <header class="header"><div class="header-content">
     \\    <div class="header-left">
     \\      <a href="{s}" class="back-btn"><span>&larr;</span> Back</a>
-    \\      <div class="header-title"><span>&#x1F4F9;</span><span>{s}</span><span style="font-size:.75rem;opacity:.7"> ({s})</span></div>
+    \\      <div class="header-title"><span>&#x1F4F9;</span><span>{s}</span><span style="font-size:.75rem;opacity:.7"> ({s})</span><span style="font-size:.75rem;opacity:.7"> | {s} images</span></div>
     \\    </div>
     \\    <div class="header-right">
     \\      <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">&#x1F319; Dark</button>
@@ -605,12 +811,17 @@ const pptx_html_template =
     \\      <span class="info" id="slideInfo">1 / {d}</span>
     \\      <button id="nextBtn" onclick="go(1)">Next &rarr;</button>
     \\    </div>
+    \\    {s}
     \\  </div>
     \\<script>
     \\var slides={s};var cur=0;
     \\function render(){{document.getElementById('slideContent').textContent=slides[cur];document.getElementById('slideInfo').textContent=(cur+1)+' / '+slides.length;document.getElementById('prevBtn').disabled=cur===0;document.getElementById('nextBtn').disabled=cur===slides.length-1}}
     \\function go(d){{cur=Math.max(0,Math.min(slides.length-1,cur+d));render()}}
     \\document.addEventListener('keydown',function(e){{if(e.key==='ArrowLeft')go(-1);if(e.key==='ArrowRight')go(1);if(e.key==='Home'){{cur=0;render()}}if(e.key==='End'){{cur=slides.length-1;render()}}}});
+    \\function toggleGallery(){{var g=document.getElementById('galleryGrid');var t=document.getElementById('galleryToggle');if(g.style.display==='none'){{g.style.display='grid';t.classList.add('open')}}else{{g.style.display='none';t.classList.remove('open')}}}}
+    \\function openLightbox(i){{var imgs=document.querySelectorAll('.gallery-item img');if(imgs[i]){{document.getElementById('lightboxImg').src=imgs[i].src;document.getElementById('lightbox').classList.add('active')}}}}
+    \\function closeLightbox(e){{if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightboxImg')){{document.getElementById('lightbox').classList.remove('active')}}}}
+    \\document.addEventListener('keydown',function(e){{if(e.key==='Escape')document.getElementById('lightbox').classList.remove('active')}});
     \\function toggleTheme(){{var d=document.body.classList.toggle('dark-mode');localStorage.setItem('theme',d?'dark':'light');updateUI()}}
     \\function updateUI(){{var d=document.body.classList.contains('dark-mode');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'\u2600\uFE0F Light':'\u1F319 Dark'}}
     \\(function(){{var s=localStorage.getItem('theme');if(s==='dark')document.body.classList.add('dark-mode');else if(!s&&window.matchMedia('(prefers-color-scheme:dark)').matches)document.body.classList.add('dark-mode');updateUI()}})()
