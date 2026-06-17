@@ -23,7 +23,7 @@ A fast, feature-rich HTTP file server written in Zig. Serves static files with a
 - 📝 **Markdown preview** — Rendered preview with table of contents, syntax highlighting, and dark mode
 - 🔍 **JSON / YAML / TOML preview** — Syntax-highlighted structured data preview
 - 📺 **Log streaming** — Live `tail -f`-style streaming for text/log files
-- 📄 **Office document preview** — DOCX, XLSX, XLSM, and PPTX previews with text extraction and table rendering (up to 50 MB)
+- 📄 **Office document preview** — DOCX, XLSX, XLSM, and PPTX previews with inline image rendering, text extraction, and table rendering (up to 50 MB)
 - 📋 **Legacy Office preview** — DOC file preview with text extraction, XLS and PPT with metadata display (up to 50 MB)
 
 ### Developer Tools
@@ -167,7 +167,7 @@ zserve/
 - PDF (`.pdf`), ZIP (`.zip`), JSON (`.json`), YAML (`.yaml`, `.yml`), TOML (`.toml`), Markdown (`.md`)
 
 ### Office Documents
-- **Modern Office**: DOCX, XLSX, XLSM, PPTX — preview with text extraction and table rendering (up to 50 MB)
+- **Modern Office**: DOCX, XLSX, XLSM, PPTX — preview with inline image rendering, text extraction, and table rendering (up to 50 MB)
 - **Legacy Office**: DOC, XLS, PPT — preview with text extraction and metadata display (up to 50 MB)
 
 Other file types are served as `application/octet-stream`.

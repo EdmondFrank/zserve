@@ -51,6 +51,30 @@ The server serves static files with automatic MIME type detection based on file 
 
 Unknown file types are served as `application/octet-stream`.
 
+## Office Document Preview
+
+The server provides rich preview for Office Open XML documents (DOCX, XLSX, XLSM, PPTX) with support for files up to 50 MB.
+
+### DOCX (Word)
+
+- **Inline image rendering** — Images are displayed at their actual positions within the document text, not in a separate gallery
+- **Text extraction** — Full document text with paragraph structure preserved
+- **Image gallery** — Fallback gallery for images that cannot be positioned inline
+- **Lightbox viewer** — Click any image to view it in full size
+
+### XLSX / XLSM (Excel)
+
+- **Multi-sheet support** — Tab-based navigation between worksheets
+- **Table rendering** — Full spreadsheet data with headers and cell content
+- **Image gallery** — Embedded images displayed in a collapsible gallery
+
+### PPTX (PowerPoint)
+
+- **Slide navigation** — Arrow keys and buttons to navigate between slides
+- **Inline images** — Images displayed within each slide's content
+- **Text extraction** — Slide text content with structure preserved
+- **Lightbox viewer** — Click images to view in full size
+
 ## Directory Listings
 
 When accessing a directory path, the server generates an HTML listing with:
