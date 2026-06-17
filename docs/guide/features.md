@@ -75,6 +75,39 @@ The server provides rich preview for Office Open XML documents (DOCX, XLSX, XLSM
 - **Text extraction** — Slide text content with structure preserved
 - **Lightbox viewer** — Click images to view in full size
 
+## PDF Preview
+
+The server provides rich preview for PDF documents (up to 50 MB) powered by [zpdf](https://github.com/EdmondFrank/zpdf), a high-performance PDF text extraction library.
+
+### Text Extraction
+
+- **Markdown rendering** — PDF text is extracted and converted to Markdown, preserving headings, paragraphs, and structure
+- **Page limit** — First 200 pages are extracted for preview
+- **Permissive parsing** — Continues extraction even on malformed PDFs
+
+### Document Metadata
+
+The sidebar displays PDF metadata extracted from the document:
+
+- **Title** — From PDF /Info dictionary
+- **Author** — From PDF /Info dictionary
+- **Page count** — Total pages in the document
+- **File size** — Human-readable size
+
+### Outline / Table of Contents
+
+If the PDF contains a `/Outlines` tree (bookmarks), the sidebar displays a navigable table of contents with hierarchical indentation.
+
+### View Modes
+
+- **Rendered view** — Markdown rendered client-side via marked.js with syntax highlighting
+- **Source view** — Raw extracted Markdown text
+- **Light/dark theme** — Toggle persisted to `localStorage`
+
+### Fallback
+
+PDFs that fail to parse display a fallback page with document metadata and a download button.
+
 ## Directory Listings
 
 When accessing a directory path, the server generates an HTML listing with:

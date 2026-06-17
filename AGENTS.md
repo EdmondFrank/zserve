@@ -35,6 +35,10 @@ The codebase is organized into modular components:
 | `http.zig` | HTTP protocol parsing, response generation |
 | `directory.zig` | Directory listing HTML generation |
 | `file_server.zig` | File serving with Range request support |
+| `markdown.zig` | Markdown preview rendering |
+| `ooxml_preview.zig` | Office Open XML preview (DOCX, XLSX, PPTX) |
+| `legacy_preview.zig` | Legacy Office preview (DOC, XLS, PPT) |
+| `pdf_preview.zig` | PDF preview via zpdf text extraction |
 | `url.zig` | URL encoding/decoding, path normalization |
 | `mime_types.zig` | MIME type detection from file extensions |
 | `logger.zig` | Request logging utilities |

@@ -24,6 +24,14 @@ pub fn build(b: *std.Build) void {
         root_module.addImport("nanoxml", nanoxml.module("nanoxml"));
     }
 
+    // Add zpdf dependency for PDF preview
+    if (b.lazyDependency("zpdf", .{
+        .target = target,
+        .optimize = optimize,
+    })) |zpdf| {
+        root_module.addImport("zpdf", zpdf.module("zpdf"));
+    }
+
     b.installArtifact(exe);
 
     // Run step

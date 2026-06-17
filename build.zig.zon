@@ -13,5 +13,9 @@
             .url = "https://gh-proxy.com/https://github.com/justrach/nanoxml/archive/refs/tags/v0.0.2.tar.gz",
             .hash = "nanoxml-0.0.2-C0H8DgL2BAAXReJ3SwOyNMyiAnF2J6zQkg34IFgFokag",
         },
+        .zpdf = .{
+            .url = "https://gh-proxy.com/https://github.com/EdmondFrank/zpdf/archive/b6d97c7fe34aba5d98268befb15e91247f55c86e.tar.gz",
+            .hash = "zpdf-0.1.0-55VlARZvCABYGpCR-wJWhw0JmV8-0lQIM-X8w1IEOvHL",
+        },
     },
 }

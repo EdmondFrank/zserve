@@ -5,6 +5,7 @@ const mime_types = @import("mime_types.zig");
 const markdown = @import("markdown.zig");
 const ooxml_preview = @import("ooxml_preview.zig");
 const legacy_preview = @import("legacy_preview.zig");
+const pdf_preview = @import("pdf_preview.zig");
 
 const BUFFER_SIZE = 64 * 1024;
 const MAX_PREVIEW_SIZE = 1024 * 1024; // 1MB max for preview files
@@ -105,6 +106,15 @@ pub fn serveFile(
     if (legacy_preview.isLegacyOfficeFile(mime_type) and file_size <= 50 * 1024 * 1024) {
         legacy_preview.renderLegacyPreview(io, allocator, stream, file, mime_type, path, dir_path, file_size) catch |err| {
             std.debug.print("Error serving legacy Office preview: {s}, falling back to raw file\n", .{@errorName(err)});
+            try serveFullFile(io, stream, file, mime_type, filename, file_size);
+        };
+        return;
+    }
+
+    // Check if this is a PDF file — allow up to 50MB
+    if (pdf_preview.isPdfFile(mime_type) and file_size <= 50 * 1024 * 1024) {
+        pdf_preview.renderPdfPreview(io, allocator, stream, file, path, dir_path, file_size) catch |err| {
+            std.debug.print("Error serving PDF preview: {s}, falling back to raw file\n", .{@errorName(err)});
             try serveFullFile(io, stream, file, mime_type, filename, file_size);
         };
         return;
