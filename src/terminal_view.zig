@@ -117,6 +117,58 @@ pub fn serveTerminalPage(
         \\      color: var(--base2);
         \\    }
         \\
+        \\    /* Close button */
+        \\    .btn-close {
+        \\      display: inline-flex; align-items: center; gap: 0.35em;
+        \\      padding: 0.3em 0.7em;
+        \\      border-radius: 6px;
+        \\      color: var(--base1);
+        \\      font-size: 12px;
+        \\      transition: all 0.2s;
+        \\      border: 1px solid transparent;
+        \\      cursor: pointer;
+        \\      background: transparent;
+        \\      font-family: var(--sans);
+        \\    }
+        \\    .btn-close:hover {
+        \\      background: rgba(220, 50, 47, 0.15);
+        \\      border-color: var(--red);
+        \\      color: var(--red);
+        \\    }
+        \\
+        \\    /* Closed overlay */
+        \\    .closed-overlay {
+        \\      position: absolute; inset: 0;
+        \\      display: none;
+        \\      flex-direction: column;
+        \\      align-items: center; justify-content: center;
+        \\      gap: 1rem;
+        \\      background: rgba(0, 43, 54, 0.95);
+        \\      backdrop-filter: blur(4px);
+        \\      z-index: 25;
+        \\    }
+        \\    .closed-overlay.visible { display: flex; }
+        \\    .closed-overlay .msg {
+        \\      font-family: var(--sans);
+        \\      font-size: 14px;
+        \\      color: var(--base1);
+        \\    }
+        \\    .closed-overlay .btn-reopen {
+        \\      padding: 0.5em 1.2em;
+        \\      border-radius: 6px;
+        \\      background: var(--green);
+        \\      color: var(--base3);
+        \\      border: none;
+        \\      font-family: var(--sans);
+        \\      font-size: 13px;
+        \\      font-weight: 600;
+        \\      cursor: pointer;
+        \\      transition: background 0.2s;
+        \\    }
+        \\    .closed-overlay .btn-reopen:hover {
+        \\      background: #9bb300;
+        \\    }
+        \\
         \\    /* ── Terminal area ── */
         \\    #terminal-wrap {
         \\      flex: 1;
@@ -293,6 +345,7 @@ pub fn serveTerminalPage(
         \\    </div>
         \\    <div class="topbar-right">
         \\      <a href="/" class="btn-back">← Files</a>
+        \\      <button class="btn-close" id="btn-close" title="Close terminal and free resources">✕ Close</button>
         \\    </div>
         \\  </div>
         \\  <div id="terminal-wrap">
@@ -306,6 +359,10 @@ pub fn serveTerminalPage(
         \\      <div class="msg">Connection lost</div>
         \\      <button class="btn-reconnect" id="btn-reconnect">Reconnect</button>
         \\    </div>
+        \\    <div class="closed-overlay" id="closed-overlay">
+        \\      <div class="msg">Terminal closed — resources freed</div>
+        \\      <button class="btn-reopen" id="btn-reopen">Reopen Terminal</button>
+        \\    </div>
         \\  </div>
         \\
         \\  <script type="module">
@@ -318,6 +375,9 @@ pub fn serveTerminalPage(
         \\    const scrollBtn   = document.getElementById('scroll-btn');
         \\    const reconnectOverlay = document.getElementById('reconnect-overlay');
         \\    const btnReconnect = document.getElementById('btn-reconnect');
+        \\    const btnClose = document.getElementById('btn-close');
+        \\    const closedOverlay = document.getElementById('closed-overlay');
+        \\    const btnReopen = document.getElementById('btn-reopen');
         \\
         \\    // ── Auto-scroll state ──
         \\    let autoScroll = true;
@@ -453,7 +513,8 @@ pub fn serveTerminalPage(
         \\        let data = event.data instanceof ArrayBuffer
         \\          ? new Uint8Array(event.data)
         \\          : event.data;
-        \\        // Fix double-newline: strip \r when followed by \n
+        \\        // Strip \r when followed by \n (fixes double-spacing in wterm)
+        \\        // All other terminal processing is handled natively by wterm core
         \\        if (data instanceof Uint8Array) {
         \\          const out = [];
         \\          for (let i = 0; i < data.length; i++) {
@@ -497,14 +558,42 @@ pub fn serveTerminalPage(
         \\      connectWS();
         \\    });
         \\
+        \\    // ── Close terminal: free PTY resources on server ──
+        \\    function closeTerminal() {
+        \\      manualClose = true;
+        \\      closedOverlay.classList.remove('visible');
+        \\      if (ws && ws.readyState === WebSocket.OPEN) {
+        \\        ws.close(1000, 'Terminal closed by user');
+        \\      } else if (ws) {
+        \\        ws.close();
+        \\      }
+        \\      setStatus('disconnected', 'Closed');
+        \\      closedOverlay.classList.add('visible');
+        \\    }
+        \\    btnClose.addEventListener('click', closeTerminal);
+        \\
+        \\    // Reopen terminal (new WS → new PTY on server)
+        \\    btnReopen.addEventListener('click', () => {
+        \\      closedOverlay.classList.remove('visible');
+        \\      setStatus('connecting', 'Connecting');
+        \\      manualClose = false;
+        \\      reconnectAttempts = 0;
+        \\      connectWS();
+        \\    });
+        \\
         \\    // Start connection
         \\    connectWS();
         \\    term.focus();
         \\
-        \\    // Cleanup on page unload
+        \\    // Cleanup on page unload — ensure server frees PTY
         \\    window.addEventListener('beforeunload', () => {
         \\      manualClose = true;
-        \\      if (ws) ws.close();
+        \\      if (ws) ws.close(1000, 'unload');
+        \\    });
+        \\    // Fallback: pagehide fires more reliably on mobile
+        \\    window.addEventListener('pagehide', () => {
+        \\      manualClose = true;
+        \\      if (ws) ws.close(1000, 'pagehide');
         \\    });
         \\  </script>
         \\</body>
