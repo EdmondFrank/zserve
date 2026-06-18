@@ -611,10 +611,12 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
             return;
         }
 
-        // Terminal HTML page
+        // Terminal HTML page (accept optional ?path= query param)
         if (std.mem.eql(u8, request.path, "/__terminal__") or
             std.mem.eql(u8, request.path, "/__terminal__/") or
-            std.mem.eql(u8, request.path, "/__terminal"))
+            std.mem.eql(u8, request.path, "/__terminal") or
+            std.mem.startsWith(u8, request.path, "/__terminal__?") or
+            std.mem.startsWith(u8, request.path, "/__terminal?"))
         {
             terminal_view.serveTerminalPage(ctx.io, ctx.stream) catch |err| {
                 std.debug.print("Error serving terminal page: {s}\n", .{@errorName(err)});
