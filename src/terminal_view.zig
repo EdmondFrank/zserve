@@ -450,9 +450,20 @@ pub fn serveTerminalPage(
         \\      };
         \\
         \\      ws.onmessage = (event) => {
-        \\        const data = event.data instanceof ArrayBuffer
+        \\        let data = event.data instanceof ArrayBuffer
         \\          ? new Uint8Array(event.data)
         \\          : event.data;
+        \\        // Fix double-newline: strip \r when followed by \n
+        \\        if (data instanceof Uint8Array) {
+        \\          const out = [];
+        \\          for (let i = 0; i < data.length; i++) {
+        \\            if (data[i] === 0x0d && i + 1 < data.length && data[i + 1] === 0x0a) continue;
+        \\            out.push(data[i]);
+        \\          }
+        \\          data = new Uint8Array(out);
+        \\        } else if (typeof data === 'string') {
+        \\          data = data.replace(/\r\n/g, '\n');
+        \\        }
         \\        term.write(data);
         \\        // Auto-scroll after writing data
         \\        if (autoScroll) {
