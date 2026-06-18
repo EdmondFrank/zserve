@@ -15,12 +15,16 @@ const truncate_file = @import("truncate.zig");
 const execute = @import("execute.zig");
 const git_view = @import("git_view.zig");
 const git = @import("git.zig");
+const terminal = @import("terminal.zig");
+const terminal_view = @import("terminal_view.zig");
 
 pub const ConnectionContext = struct {
     allocator: std.mem.Allocator,
     io: Io,
     stream: Io.net.Stream,
     root_dir: Io.Dir,
+    root_path: []const u8,
+    enable_terminal: bool,
 };
 
 /// Handle a connection
@@ -584,6 +588,38 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
         return;
     }
 
+    // Handle terminal endpoints (web terminal via wterm)
+    if (ctx.enable_terminal) {
+        // WebSocket upgrade endpoint for terminal sessions
+        if (std.mem.eql(u8, request.path, "/__terminal__/ws") or
+            std.mem.eql(u8, request.path, "/__terminal/ws"))
+        {
+            // Check for WebSocket upgrade headers (case-insensitive per RFC 6455)
+            const upgrade_header = request.headers.get("Upgrade") orelse "";
+            if (!std.ascii.eqlIgnoreCase(upgrade_header, "websocket"))
+            {
+                http.sendBadRequest(ctx.stream, ctx.io, "WebSocket upgrade required") catch {};
+                return;
+            }
+
+            terminal.handleTerminalSession(ctx.io, ctx.stream, &request, ctx.root_path) catch |err| {
+                std.debug.print("Error handling terminal session: {s}\n", .{@errorName(err)});
+            };
+            return;
+        }
+
+        // Terminal HTML page
+        if (std.mem.eql(u8, request.path, "/__terminal__") or
+            std.mem.eql(u8, request.path, "/__terminal__/") or
+            std.mem.eql(u8, request.path, "/__terminal"))
+        {
+            terminal_view.serveTerminalPage(ctx.io, ctx.stream) catch |err| {
+                std.debug.print("Error serving terminal page: {s}\n", .{@errorName(err)});
+            };
+            return;
+        }
+    }
+
     // URL decode the path
     const decoded_path = url.decode(arena.allocator(), request.path) catch |err| {
         std.debug.print("Error decoding URL: {s}\n", .{@errorName(err)});
@@ -604,7 +640,7 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Try to open as directory first (follow symlinks to support symlinked directories)
     if (ctx.root_dir.openDir(ctx.io, path_to_open, .{ .iterate = true, .follow_symlinks = true })) |dir| {
         defer dir.close(ctx.io);
-        directory.listDirectory(ctx.io, arena.allocator(), ctx.stream, path_to_open, ctx.root_dir) catch |err| {
+        directory.listDirectory(ctx.io, arena.allocator(), ctx.stream, path_to_open, ctx.root_dir, ctx.enable_terminal) catch |err| {
             std.debug.print("Error listing directory: {s}\n", .{@errorName(err)});
         };
         return;

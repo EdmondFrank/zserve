@@ -7,6 +7,7 @@ const Args = struct {
     port: u16,
     host: []const u8,
     show_help: bool,
+    enable_terminal: bool,
 };
 
 /// Print help message
@@ -18,6 +19,7 @@ fn printHelp(exe_name: []const u8) void {
         \\  --root PATH          Root directory to serve (required)
         \\  --port PORT, -p PORT Port to listen on (default: 8080)
         \\  --host HOST, -H HOST Host to bind to (default: 127.0.0.1)
+        \\  --terminal           Enable web terminal (WARNING: grants shell access)
         \\  --help, -h           Show this help message
         \\
         \\Examples:
@@ -41,6 +43,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, io: Io, process_args: std.process
     var port: u16 = 8080;
     var host: []const u8 = "127.0.0.1";
     var show_help = false;
+    var enable_terminal = false;
 
     // Parse arguments
     while (args_iter.next()) |arg| {
@@ -97,6 +100,8 @@ pub fn parseArgs(allocator: std.mem.Allocator, io: Io, process_args: std.process
                 return error.InvalidArgument;
             };
             host = try allocator.dupe(u8, host_arg);
+        } else if (std.mem.eql(u8, arg, "--terminal")) {
+            enable_terminal = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             printHelp(exe_name);
             show_help = true;
@@ -115,6 +120,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, io: Io, process_args: std.process
             .port = port,
             .host = host,
             .show_help = true,
+            .enable_terminal = false,
         };
     }
 
@@ -131,5 +137,6 @@ pub fn parseArgs(allocator: std.mem.Allocator, io: Io, process_args: std.process
         .port = port,
         .host = host,
         .show_help = false,
+        .enable_terminal = enable_terminal,
     };
 }

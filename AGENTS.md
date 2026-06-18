@@ -20,6 +20,9 @@ zig build run -- --root . --port 8080
 
 # Build with optimizations
 zig build -Doptimize=ReleaseFast
+
+# Run the server with web terminal enabled
+zig build run -- --root . --port 8080 --terminal
 ```
 
 ## Code Architecture
@@ -44,6 +47,10 @@ The codebase is organized into modular components:
 | `logger.zig` | Request logging utilities |
 | `params.zig` | CLI argument parsing |
 | `server_context.zig` | Server state management |
+| `websocket.zig` | WebSocket protocol (RFC 6455) handshake, frame read/write |
+| `pty.zig` | Pseudo-terminal allocation (posix_openpt, fork, login_tty) |
+| `terminal.zig` | Terminal session relay (WebSocket ↔ PTY bidirectional) |
+| `terminal_view.zig` | Terminal HTML page generator (loads wterm from CDN) |
 
 ### Data Flow
 
@@ -150,6 +157,34 @@ pub const StatusCode = enum(u16) {
    - Update `printHelp()` function
 
 2. Use the new option in `src/main.zig`
+
+### Web Terminal (wterm Integration)
+
+The web terminal feature provides an interactive shell accessible via the browser using [wterm](https://wterm.dev/) — a Zig/WASM terminal emulator.
+
+**Enabling**: Use the `--terminal` CLI flag. Disabled by default for security.
+
+```
+zig build run -- --root . --port 8080 --terminal
+```
+
+**Architecture**:
+
+```
+Browser (wterm DOM)  ←──WebSocket──→  ZServe  ←──PTY──→  /bin/sh
+```
+
+- `/__terminal__` — Serves the terminal HTML page (loads wterm JS from CDN)
+- `/__terminal__/ws` — WebSocket upgrade endpoint, spawns PTY and relays data
+
+**Key modules**:
+
+- `websocket.zig` — RFC 6455 WebSocket handshake (SHA-1 + base64 accept), frame parser (opcode, mask, payload length), frame encoder
+- `pty.zig` — PTY allocation via `posix_openpt` → `grantpt` → `unlockpt` → `ptsname` → `fork` → `login_tty`
+- `terminal.zig` — Bidirectional relay loop using `poll()`, handles resize messages (JSON `{"cols":N,"rows":N}`)
+- `terminal_view.zig` — HTML page with wterm vanilla JS, WebSocketTransport, auto-resize
+
+**Security**: Terminal grants full shell access. Only enable on trusted networks. The server defaults to `127.0.0.1` binding.
 
 ## Testing
 

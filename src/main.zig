@@ -70,6 +70,13 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Server listening on http://{s}:{d}\n", .{ args.host, args.port });
     std.debug.print("Serving from root directory: {s}\n", .{args.root_path});
+
+    if (args.enable_terminal) {
+        std.debug.print("\n⚠️  WARNING: Web terminal is ENABLED!\n", .{});
+        std.debug.print("⚠️  Anyone with access to this server can execute arbitrary commands.\n", .{});
+        std.debug.print("⚠️  Terminal available at: http://{s}:{d}/__terminal__\n\n", .{ args.host, args.port });
+    }
+
     std.debug.print("Press Ctrl+C to shutdown\n", .{});
 
     // Timeout for individual client connections to prevent slow clients from hanging workers
@@ -133,6 +140,8 @@ pub fn main(init: std.process.Init) !void {
             .io = io,
             .stream = stream,
             .root_dir = args.root_dir,
+            .root_path = args.root_path,
+            .enable_terminal = args.enable_terminal,
         };
 
         // Submit connection to thread pool for concurrent handling

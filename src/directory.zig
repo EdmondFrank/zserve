@@ -35,6 +35,7 @@ pub fn listDirectory(
     stream: Io.net.Stream,
     dir_path: []const u8,
     root_dir: Io.Dir,
+    enable_terminal: bool,
 ) !void {
     var dir = try root_dir.openDir(io, dir_path, .{
         .iterate = true,
@@ -283,6 +284,9 @@ pub fn listDirectory(
         \\    .git-toggle { position: fixed; top: 20px; right: 90px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--exec-btn-bg); border: 1px solid var(--exec-btn-border); border-radius: 6px; color: var(--exec-btn-color); font-size: 14px; cursor: pointer; transition: all 0.2s; z-index: 2000; }
         \\    .git-toggle:hover { transform: scale(1.05); }
         \\    .git-toggle:active { transform: scale(0.95); }
+        \\    .terminal-toggle { position: fixed; top: 20px; right: 160px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 6px; color: #38bdf8; font-size: 14px; cursor: pointer; transition: all 0.2s; z-index: 2000; text-decoration: none; }
+        \\    .terminal-toggle:hover { transform: scale(1.05); box-shadow: 0 0 12px rgba(56, 189, 248, 0.4); }
+        \\    .terminal-toggle:active { transform: scale(0.95); }
         \\    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
         \\    .toast { padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 12px; min-width: 300px; max-width: 450px; animation: slideIn 0.3s ease; transition: all 0.3s ease; }
         \\    .toast.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
@@ -523,6 +527,11 @@ pub fn listDirectory(
             try stream_writer.interface.writeAll(encoded_git_path);
             try stream_writer.interface.writeAll("'\">🌿 Git</button>\n");
         }
+    }
+
+    // Add terminal button if terminal is enabled
+    if (enable_terminal) {
+        try stream_writer.interface.writeAll("  <a href=\"/__terminal__\" class=\"terminal-toggle\">🖥️ Terminal</a>\n");
     }
 
     try stream_writer.interface.writeAll("</h1>\n");
