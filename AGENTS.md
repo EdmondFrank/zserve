@@ -71,6 +71,12 @@ main.zig
                     │
                     ├── url.hasTraversal() → Security check
                     │
+                    ├── /__terminal__/ws → WebSocket upgrade → terminal.handleTerminalSession()
+                    │       │
+                    │       └── pty.spawn(cwd) → Fork shell with PTY
+                    │
+                    ├── /__terminal__ → terminal_view.serveTerminalPage()
+                    │
                     ├── root_dir.openDir() → Try as directory
                     │       │
                     │       └── directory.listDirectory() → HTML listing
@@ -171,7 +177,7 @@ zig build run -- --root . --port 8080 --terminal
 **Architecture**:
 
 ```
-Browser (wterm DOM)  ←──WebSocket──→  ZServe  ←──PTY──→  /bin/sh
+Browser (wterm DOM)  ←──WebSocket──→  ZServe  ←──PTY──→  user shell ($SHELL)
 ```
 
 - `/__terminal__` — Serves the terminal HTML page (loads wterm JS from CDN)
@@ -183,6 +189,17 @@ Browser (wterm DOM)  ←──WebSocket──→  ZServe  ←──PTY──→ 
 - `pty.zig` — PTY allocation via `posix_openpt` → `grantpt` → `unlockpt` → `ptsname` → `fork` → `login_tty`
 - `terminal.zig` — Bidirectional relay loop using `poll()`, handles resize messages (JSON `{"cols":N,"rows":N}`)
 - `terminal_view.zig` — HTML page with wterm vanilla JS, WebSocketTransport, auto-resize
+
+**Features**:
+
+- **CWD initialization** — Terminal opens in the currently browsed directory (via `?path=` query param)
+- **Shell detection** — Uses `$SHELL` env var; falls back to `/bin/zsh` (macOS) or `/bin/sh` (Linux)
+- **Login shell** — Launches with `-l` flag for full user environment
+- **Auto-scroll** — Automatically scrolls to bottom on new output; scroll-to-bottom button when scrolled up
+- **Close/Reopen** — Close button sends WebSocket close frame → server kills PTY child + closes master fd; reopen starts fresh session
+- **Auto-resize** — Terminal adapts to browser window; resize events sent to PTY as JSON messages
+- **Solarized Dark** — Themed color palette with proper ANSI color support
+- **Reconnect** — Auto-reconnect with exponential backoff on disconnect; manual reconnect button
 
 **Security**: Terminal grants full shell access. Only enable on trusted networks. The server defaults to `127.0.0.1` binding.
 

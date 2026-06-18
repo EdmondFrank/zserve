@@ -197,3 +197,62 @@ Content-Length: 1234
 Accept-Ranges: bytes
 Content-Disposition: inline; filename="index.html"
 ```
+
+## Web Terminal
+
+An interactive shell accessible directly from the browser, powered by [wterm](https://wterm.dev/) — a Zig/WASM terminal emulator.
+
+### Enabling
+
+```bash
+./zig-out/bin/zserve --root . --port 8080 --terminal
+```
+
+Disabled by default for security. When enabled, the terminal grants full shell access to the host.
+
+### Accessing
+
+- Navigate to `/__terminal__` directly
+- Click the 🖥️ Terminal button in any directory listing
+- The terminal opens in the directory you're currently browsing via `?path=` query parameter
+
+### Architecture
+
+```
+Browser (wterm DOM)  ←──WebSocket──→  ZServe  ←──PTY──→  user shell ($SHELL)
+```
+
+| Component | Description |
+|-----------|-------------|
+| `/__terminal__` | Terminal HTML page (loads wterm from CDN) |
+| `/__terminal__/ws` | WebSocket upgrade endpoint, spawns PTY and relays data |
+| `websocket.zig` | RFC 6455 WebSocket handshake, frame read/write |
+| `pty.zig` | PTY allocation via `posix_openpt` → `grantpt` → `unlockpt` → `fork` → `login_tty` |
+| `terminal.zig` | Bidirectional relay loop using `poll()`, resize message handling |
+| `terminal_view.zig` | HTML page with wterm integration, Solarized Dark theme |
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **CWD initialization** | Terminal opens in the currently browsed directory |
+| **Shell detection** | Uses `$SHELL` env var (falls back to `/bin/zsh` on macOS, `/bin/sh` on Linux) |
+| **Login shell** | Launches with `-l` flag for full user environment (aliases, PATH, etc.) |
+| **Auto-scroll** | Automatically scrolls to bottom on new output |
+| **Scroll support** | Full scrollback with themed scrollbar |
+| **Scroll-to-bottom** | Floating button appears when scrolled up |
+| **Close/Reopen** | Close button frees PTY resources on server; reopen creates a fresh session |
+| **Auto-resize** | Terminal adapts to browser window size via ResizeObserver |
+| **Resize relay** | Window size changes sent to PTY via JSON `{cols, rows}` messages |
+| **Solarized Dark** | Full color palette with proper ANSI color support |
+| **Reconnect** | Auto-reconnect with exponential backoff on disconnect |
+| **Keyboard shortcuts** | `Ctrl+L` clears screen |
+
+### Security Considerations
+
+The web terminal is **disabled by default**. When enabled:
+
+- Grants full shell access to the host machine
+- Runs with the same permissions as the zserve process
+- Should only be used on trusted networks
+- The server defaults to `127.0.0.1` binding

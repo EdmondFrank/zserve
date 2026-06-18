@@ -30,6 +30,7 @@ A fast, feature-rich HTTP file server written in Zig. Serves static files with a
 ### Developer Tools
 - ▶️ **Script execution** — Execute shell scripts directly from the browser with output display
 - 🌿 **Git integration** — Full Git status view accessible at `/__git__/`
+- 🖥️ **Web terminal** — Interactive shell in the browser via [wterm](https://wterm.dev/) (enable with `--terminal`)
 
 ## Git Integration
 
@@ -43,6 +44,28 @@ Navigate to `/__git__/` (or `/__git__?path=<subdir>`) from any directory listing
 | **Unstage file** | `−` button unstages a staged file (`git reset HEAD`) |
 | **Restore file** | `↩` button discards working-tree changes for a file (`git restore`) with a confirmation dialog |
 | **Commit history** | Expandable recent commits panel; click any commit to view its full diff |
+
+## Web Terminal
+
+An interactive shell accessible directly from the browser, powered by [wterm](https://wterm.dev/) (Zig/WASM terminal emulator).
+
+```bash
+# Enable the terminal (disabled by default for security)
+./zig-out/bin/zserve --root . --port 8080 --terminal
+```
+
+| Feature | Description |
+|---------|-------------|
+| **CWD initialization** | Terminal opens in the currently browsed directory |
+| **Shell detection** | Uses `$SHELL` env var (falls back to `/bin/zsh` on macOS, `/bin/sh` on Linux) |
+| **Login shell** | Launches with `-l` flag for full user environment |
+| **Auto-scroll** | Automatically scrolls to bottom on new output |
+| **Scroll support** | Full scrollback with themed scrollbar |
+| **Close/Reopen** | Close button frees PTY resources; reopen creates a fresh session |
+| **Auto-resize** | Terminal adapts to browser window size |
+| **Solarized Dark** | Themed color palette with proper ANSI color support |
+
+Navigate to `/__terminal__` from any directory listing, or click the 🖥️ Terminal button. The terminal opens in the directory you're currently browsing.
 
 ## Requirements
 
@@ -89,6 +112,7 @@ zig build -Doptimize=ReleaseFast
 | `--root` | | Root directory to serve (required) | — |
 | `--port` | `-p` | Port to listen on | `8080` |
 | `--host` | `-H` | Host address to bind to | `127.0.0.1` |
+| `--terminal` | | Enable web terminal (⚠️ full shell access) | `false` |
 | `--help` | `-h` | Show help message | — |
 
 ## Examples
@@ -139,6 +163,10 @@ zserve/
 │   ├── pdf_preview.zig    # PDF preview via zpdf text extraction
 │   ├── git.zig            # Git command wrappers
 │   ├── git_view.zig       # Git status/diff HTML view
+│   ├── websocket.zig      # WebSocket protocol (RFC 6455)
+│   ├── pty.zig            # PTY allocation (posix_openpt, fork)
+│   ├── terminal.zig       # Terminal session relay (WebSocket ↔ PTY)
+│   ├── terminal_view.zig  # Terminal HTML page (wterm integration)
 │   ├── thread_pool.zig    # Concurrent connection pool
 │   ├── url.zig            # URL encoding/decoding
 │   ├── mime_types.zig     # MIME type detection
@@ -182,6 +210,7 @@ Other file types are served as `application/octet-stream`.
 - **URL encoding** — Malformed URL encodings are handled safely
 - **Upload size limit** — Request bodies capped at 10 MB to prevent DoS
 - **Script execution** — Requires explicit user confirmation in the browser before running
+- **Web terminal** — Disabled by default; when enabled, grants full shell access to the host. Only use on trusted networks.
 
 ## License
 
