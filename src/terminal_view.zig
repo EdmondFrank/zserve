@@ -178,27 +178,24 @@ pub fn serveTerminalPage(
         \\    #terminal-container {
         \\      width: 100%;
         \\      height: 100%;
-        \\      overflow: hidden;
+        \\      overflow-y: auto;
+        \\      overflow-x: hidden;
+        \\      scrollbar-width: thin;
+        \\      scrollbar-color: var(--base01) transparent;
         \\    }
         \\
         \\    /* wterm internal scroll container */
         \\    .wterm {
         \\      width: 100%;
-        \\      height: 100%;
+        \\      min-height: 100%;
         \\    }
-        \\    /* Style the scrollable area inside wterm */
-        \\    .wterm-scroll {
-        \\      overflow-y: auto !important;
-        \\      scrollbar-width: thin;
-        \\      scrollbar-color: var(--base01) transparent;
-        \\    }
-        \\    .wterm-scroll::-webkit-scrollbar { width: 8px; }
-        \\    .wterm-scroll::-webkit-scrollbar-track { background: transparent; }
-        \\    .wterm-scroll::-webkit-scrollbar-thumb {
+        \\    #terminal-container::-webkit-scrollbar { width: 8px; }
+        \\    #terminal-container::-webkit-scrollbar-track { background: transparent; }
+        \\    #terminal-container::-webkit-scrollbar-thumb {
         \\      background: var(--base01);
         \\      border-radius: 4px;
         \\    }
-        \\    .wterm-scroll::-webkit-scrollbar-thumb:hover {
+        \\    #terminal-container::-webkit-scrollbar-thumb:hover {
         \\      background: var(--base00);
         \\    }
         \\
@@ -381,35 +378,11 @@ pub fn serveTerminalPage(
         \\
         \\    // ── Auto-scroll state ──
         \\    let autoScroll = true;
-        \\    let scrollEl = null;  // wterm's internal scroll element
+        \\    const scrollEl = container; // #terminal-container is the scrollable element
         \\
         \\    function setStatus(cls, text) {
         \\      statusEl.className = 'status ' + cls;
         \\      statusText.textContent = text;
-        \\    }
-        \\
-        \\    // ── Find wterm's scrollable element after init ──
-        \\    function findScrollElement() {
-        \\      // wterm creates a .wterm root with internal scroll containers
-        \\      // Try common selectors
-        \\      const candidates = [
-        \\        container.querySelector('.wterm-scroll'),
-        \\        container.querySelector('[class*="scroll"]'),
-        \\        container.querySelector('.wterm'),
-        \\      ];
-        \\      for (const el of candidates) {
-        \\        if (el && (el.scrollHeight > el.clientHeight || el.style.overflowY !== 'hidden')) {
-        \\          return el;
-        \\        }
-        \\      }
-        \\      // Fallback: any element that can scroll
-        \\      const all = container.querySelectorAll('div');
-        \\      for (const el of all) {
-        \\        if (el.scrollHeight > el.clientHeight && el.clientHeight > 0) {
-        \\          return el;
-        \\        }
-        \\      }
-        \\      return container;
         \\    }
         \\
         \\    function isAtBottom() {
@@ -467,11 +440,8 @@ pub fn serveTerminalPage(
         \\    await term.init();
         \\    loader.classList.add('hidden');
         \\
-        \\    // Find the scrollable element inside wterm
-        \\    scrollEl = findScrollElement();
-        \\    if (scrollEl) {
-        \\      scrollEl.addEventListener('scroll', updateScrollState);
-        \\    }
+        \\    // Scroll listener on container
+        \\    scrollEl.addEventListener('scroll', updateScrollState);
         \\
         \\    // Scroll button click
         \\    scrollBtn.addEventListener('click', () => {
