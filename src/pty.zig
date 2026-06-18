@@ -161,8 +161,13 @@ pub fn spawn(cwd: []const u8) !PtyProcess {
 
         var argv: [3]?[*:0]u8 = .{ @ptrCast(&shell_buf), @ptrCast(@constCast("-l")), null };
 
-        // Set TERM environment variable
+        // Set terminal environment variables
         _ = setenv("TERM", "xterm-256color", 1);
+        _ = setenv("COLORTERM", "truecolor", 1);
+        _ = setenv("LINES", "24", 1);
+        _ = setenv("COLUMNS", "80", 1);
+        _ = setenv("TERM_PROGRAM", "wterm", 1);
+        _ = setenv("TERM_PROGRAM_VERSION", "1.0.0", 1);
 
         // Execute the shell
         _ = c.execve(@ptrCast(&shell_buf), @ptrCast(&argv), @ptrCast(c.environ));

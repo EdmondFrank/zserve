@@ -591,8 +591,8 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
     // Handle terminal endpoints (web terminal via wterm)
     if (ctx.enable_terminal) {
         // WebSocket upgrade endpoint for terminal sessions
-        if (std.mem.eql(u8, request.path, "/__terminal__/ws") or
-            std.mem.eql(u8, request.path, "/__terminal/ws"))
+        if (std.mem.startsWith(u8, request.path, "/__terminal__/ws") or
+            std.mem.startsWith(u8, request.path, "/__terminal/ws"))
         {
             // Check for WebSocket upgrade headers (case-insensitive per RFC 6455)
             const upgrade_header = request.headers.get("Upgrade") orelse "";
@@ -602,7 +602,10 @@ pub fn handleConnection(ctx: ConnectionContext) !void {
                 return;
             }
 
-            terminal.handleTerminalSession(ctx.io, ctx.stream, &request, ctx.root_path) catch |err| {
+            // Extract optional path query param for terminal CWD
+            const term_cwd = resolveTerminalCwd(arena.allocator(), ctx.root_path, request.path);
+
+            terminal.handleTerminalSession(ctx.io, ctx.stream, &request, term_cwd) catch |err| {
                 std.debug.print("Error handling terminal session: {s}\n", .{@errorName(err)});
             };
             return;
@@ -835,4 +838,34 @@ fn resolveGitDir(
         return .{ .dir = root_dir, .must_close = false };
     };
     return .{ .dir = dir, .must_close = true };
+}
+
+/// Resolve the terminal CWD from the request path's `path` query parameter.
+/// If no path is specified or it fails validation, falls back to `root_path`.
+/// The returned slice is allocated from the provided allocator.
+fn resolveTerminalCwd(
+    allocator: std.mem.Allocator,
+    root_path: []const u8,
+    request_path: []const u8,
+) []const u8 {
+    // Extract query string from the request path
+    const query_idx = std.mem.indexOf(u8, request_path, "?") orelse return root_path;
+    const query = request_path[query_idx + 1 ..];
+
+    // Extract path param using the existing helper
+    const path_encoded = extractQueryParam(query, "path") orelse return root_path;
+
+    // URL-decode the path
+    const decoded = url.decode(allocator, path_encoded) catch return root_path;
+
+    // Security: reject directory traversal
+    if (url.hasTraversal(decoded)) return root_path;
+
+    // Normalize: strip leading slash
+    const rel_path = if (std.mem.startsWith(u8, decoded, "/")) decoded[1..] else decoded;
+    if (rel_path.len == 0) return root_path;
+
+    // Construct absolute path: root_path/rel_path
+    const cwd = std.fmt.allocPrint(allocator, "{s}/{s}", .{ root_path, rel_path }) catch return root_path;
+    return cwd;
 }

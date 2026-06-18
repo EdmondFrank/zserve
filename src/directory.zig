@@ -531,7 +531,15 @@ pub fn listDirectory(
 
     // Add terminal button if terminal is enabled
     if (enable_terminal) {
-        try stream_writer.interface.writeAll("  <a href=\"/__terminal__\" class=\"terminal-toggle\">🖥️ Terminal</a>\n");
+        // Include the current directory path so the terminal opens in the right CWD
+        if (std.mem.eql(u8, dir_path, ".") or dir_path.len == 0) {
+            try stream_writer.interface.writeAll("  <a href=\"/__terminal__\" class=\"terminal-toggle\">🖥️ Terminal</a>\n");
+        } else {
+            const encoded_path = try url.encode(allocator, dir_path);
+            try stream_writer.interface.writeAll("  <a href=\"/__terminal__?path=");
+            try stream_writer.interface.writeAll(encoded_path);
+            try stream_writer.interface.writeAll("\" class=\"terminal-toggle\">🖥️ Terminal</a>\n");
+        }
     }
 
     try stream_writer.interface.writeAll("</h1>\n");
